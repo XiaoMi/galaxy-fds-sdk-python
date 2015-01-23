@@ -1,7 +1,4 @@
-# -*- coding: utf-8 -*-
 class Common(object):
-  """There are common strings for FDS."""
-
   XIAOMI_HEADER_PREFIX = "x-xiaomi-"
   XIAOMI_HEADER_DATE = "x-xiaomi-date"
 
@@ -14,7 +11,7 @@ class Common(object):
   CONTENT_TYPE = "content-type"
   DATE = "date"
 
-  REQUEST_TIME_LIMIT = 900000
+  REQUEST_TIME_LIMIT = 900000 # 15min
 
   CACHE_CONTROL = "cache-control"
   CONTENT_ENCODING = "content-encoding"

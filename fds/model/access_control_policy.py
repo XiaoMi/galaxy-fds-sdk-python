@@ -1,19 +1,17 @@
-# -*- coding: utf-8 -*-
 class AccessControlPolicy(dict):
-  """AccessControlPolicy is used for access control of FDS."""
+  '''
+  The access control policy class.
+  '''
 
-  @staticmethod
-  def get_access_control_policy(response_content):
-    """Get the policy of access control from response."""
-
-    if response_content != '':
-      acl = AccessControlPolicy()
-      if 'owner' in response_content.keys():
-        acl.owner = response_content['owner']
-      if 'accessControlList' in response_content.keys():
-        acl.access_control_list = response_content['accessControlList']
-      return acl
-    return None
+  def __init__(self, json):
+    '''
+    Construct access control policy object from json.
+    '''
+    if json:
+      if 'owner' in json.keys():
+        self.owner = json['owner']
+      if 'accessControlList' in json.keys():
+        self.access_control_list = json['accessControlList']
 
   @property
   def owner(self):
@@ -30,3 +28,4 @@ class AccessControlPolicy(dict):
   @access_control_list.setter
   def access_control_list(self, access_control_list):
     self['accessControlList'] = access_control_list
+

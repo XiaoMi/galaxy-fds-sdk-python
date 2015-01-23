@@ -1,66 +1,86 @@
-# -*- coding: utf-8 -*-
 import base64
 import hmac
-from requests.auth import AuthBase
-from hashlib import sha1
-from urlparse import urlparse
-from email.utils import formatdate
 
-from fds.auth.common import Common
-from fds.model.subresource import SubResource
+from email.utils import formatdate
+from hashlib import sha1
+from requests.auth import AuthBase
+from urlparse import urlparse
+
+from auth.common import Common
+from model.subresource import SubResource
 
 class Signer(AuthBase):
-  """Signer is used for authentication of FDS."""
+  '''
+  The signer class used to sign the request.
+  '''
 
   def __init__(self, app_key, app_secret, service_url=None):
-    """Initialize with app_key and app_secret."""
-
     if service_url:
-        self._service_base_url = service_url
+      self._service_base_url = service_url
     self._app_key = str(app_key)
     self._app_secret = str(app_secret)
 
-  def __call__(self, r):
-    """This is invoked when send requests with authentication."""
+  def __call__(self, request):
+    request.headers[Common.DATE] = formatdate(timeval=None, localtime=False,
+      usegmt=True)
+    signature = self._sign_to_base64(request.method, request.headers,
+      request.url, self._app_secret)
+    request.headers[Common.AUTHORIZATION] = 'Galaxy-V2 %s:%s' % (
+      self._app_key, signature)
+    return request
 
-    r.headers[Common.DATE] = formatdate(timeval=None, localtime=False, usegmt=True)
-    signature = self._get_signature(r.method, r.headers, r.url, self._app_secret)
-    r.headers[Common.AUTHORIZATION] = 'Galaxy-V2 %s:%s' % (self._app_key, signature)
-    return r
+  def _sign(self, method, headers, url, app_secret):
+    '''
+    Sign the specified http request.
+    :param method:     The request method to sign
+    :param headers:    The request headers to sign
+    :param url:        The request uri to sign
+    :param app_secret: The secret used to sign the request
+    :return: The signed result, aka the signature
+    '''
+    string_to_sign = self._construct_string_to_sign(method, headers, url)
+    digest = hmac.new(app_secret, string_to_sign, digestmod=sha1)
+    return digest.digest()
 
-  @staticmethod
-  def _get_signature(method, headers, url, app_secret):
-    """Construct and return the signature for FDS."""
+  def _sign_to_base64(self, method, headers, url, app_secret):
+    '''
+    Sign the specified request to base64 encoded result.
+    :param method:     The request method to sign
+    :param headers:    The request headers to sign
+    :param url:        The request uri to sign
+    :param app_secret: The secret used to sign the request
+    :return: The signed result, aka the signature
+    '''
+    signature = self._sign(method, headers, url, app_secret)
+    return base64.encodestring(signature).strip()
 
-    string_to_sign = Signer._construct_string_to_sign(method, headers, url)
-    h = hmac.new(app_secret, string_to_sign, digestmod=sha1)
-    return base64.encodestring(h.digest()).strip()
-
-  @staticmethod
-  def _construct_string_to_sign(http_method, http_headers, uri):
-    """Get header data to construct the string for signature."""
-
-    result = ''
+  def _construct_string_to_sign(self, http_method, http_headers, uri):
+    '''
+    Construct the string used to sign the request.
+    '''
+    result = str()
     result += '%s\n' % http_method
-    result += '%s\n' % Signer._get_header_value(http_headers, Common.CONTENT_MD5)
-    result += '%s\n' % Signer._get_header_value(http_headers, Common.CONTENT_TYPE)
-    expires = Signer._get_expires(uri)
+    result += '%s\n' % self._get_header_value(http_headers,
+      Common.CONTENT_MD5)
+    result += '%s\n' % self._get_header_value(http_headers,
+      Common.CONTENT_TYPE)
+    expires = self._get_expires(uri)
+
     if expires > 0:
       result += '%s\n' % expires
     else:
-      xiaomi_date = Signer._get_header_value(http_headers, Common.XIAOMI_HEADER_DATE)
-      date = ''
-      if xiaomi_date is '':
-        date = Signer._get_header_value(http_headers, Common.DATE)
+      xiaomi_date = self._get_header_value(http_headers,
+        Common.XIAOMI_HEADER_DATE)
+      date = str()
+      if len(xiaomi_date) == 0:
+        date = self._get_header_value(http_headers, Common.DATE)
       result += '%s\n' % date
-    result += '%s' % Signer._canonicalize_xiaomi_headers(http_headers)
-    result += '%s' % Signer._canonicalize_resource(uri)
+
+    result += '%s' % self._canonicalize_xiaomi_headers(http_headers)
+    result += '%s' % self._canonicalize_resource(uri)
     return result
 
-  @staticmethod
-  def _get_header_value(http_headers, name):
-    """Get values from HTTP header."""
-
+  def _get_header_value(self, http_headers, name):
     if http_headers is not None and name in http_headers:
       value = http_headers[name]
       if type(value) is list:
@@ -69,67 +89,63 @@ class Signer(AuthBase):
         return value
     return ""
 
-  @staticmethod
-  def _canonicalize_xiaomi_headers(http_headers):
-    """Canonicalize the standard headers for FDS."""
-
-    if http_headers is None or http_headers == {}:
+  def _canonicalize_xiaomi_headers(self, http_headers):
+    if http_headers is None or len(http_headers) == 0:
       return ''
-    canonicalized_headers = {}
+
+    canonicalized_headers = dict()
     for key in http_headers:
-      lk = key.lower()
+      lower_key = key.lower()
       try:
-        lk = lk.decode('utf-8')
+        lower_key = lower_key.decode('utf-8')
       except:
         pass
-      if http_headers[key] and lk.startswith(Common.XIAOMI_HEADER_PREFIX):
+
+      if http_headers[key] and lower_key.startswith(Common.XIAOMI_HEADER_PREFIX):
         if type(http_headers[key]) != str:
-          canonicalized_headers[lk] = ''
+          canonicalized_headers[lower_key] = str()
           i = 0
           for k in http_headers[key]:
-            canonicalized_headers[lk] += '%s' % (k.strip())
+            canonicalized_headers[lower_key] += '%s' % (k.strip())
             i += 1
             if i < len(http_headers[key]):
-              canonicalized_headers[lk] += ','
+              canonicalized_headers[lower_key] += ','
         else:
-          canonicalized_headers[lk] = http_headers[key].strip()
+          canonicalized_headers[lower_key] = http_headers[key].strip()
+
     result = ""
     for key in sorted(canonicalized_headers.keys()):
       values = canonicalized_headers[key]
       result += '%s:%s\n' % (key, values)
     return result
 
-  @staticmethod
-  def _canonicalize_resource(uri):
-    """Canonicalize the standard resource."""
-
+  def _canonicalize_resource(self, uri):
     result = ""
-    parsedurl = urlparse(uri)
-    result += '%s' % parsedurl.path
-    query_args = parsedurl.query.split('&')
+    parsed_url = urlparse(uri)
+    result += '%s' % parsed_url.path
+    query_args = parsed_url.query.split('&')
+
     i = 0
-    for q in sorted(query_args):
-      k = q.split('=')
-      if k[0] in SubResource.get_all_subresource():
+    for query in sorted(query_args):
+      key = query.split('=')
+      if key[0] in SubResource.get_all_subresource():
         if i == 0:
           result += '?'
         else:
           result += '&'
-        if len(k) == 1:
-          result += '%s' % k[0]
+        if len(key) == 1:
+          result += '%s' % key[0]
         else:
-          result += '%s=%s' % (k[0], k[1])
+          result += '%s=%s' % (key[0], key[1])
         i += 1
     return result
 
-  @staticmethod
-  def _get_expires(uri):
-    """Get the value of expires from uri."""
-
+  def _get_expires(self, uri):
     parsed_url = urlparse(uri)
     query_args = sorted(parsed_url.query.split('&'))
-    for q in query_args:
-      k = q.split('=')[0]
-      if k == Common.EXPIRES:
-        return q.split('=')[1]
+    for query in query_args:
+      key = query.split('=')[0]
+      if key == Common.EXPIRES:
+        return query.split('=')[1]
     return 0
+
