@@ -23,6 +23,9 @@ class Permission(object):
   '''
   FULL_CONTROL = 0xff
 
+  def __init__(self, value):
+    self._value = value
+
   def to_string(self):
     value = self.get_value()
     if value == Permission.READ:
@@ -35,15 +38,7 @@ class Permission(object):
       raise RuntimeError('Fatal error')
 
   def get_value(self):
-    permission = self.to_string()
-    if permission == 'READ':
-      return Permission.READ
-    elif permission == 'WRITE':
-      return Permission.WRITE
-    elif permission == 'FULL_CONTROL':
-      return Permission.FULL_CONTROL
-    else:
-      raise RuntimeError('Fatal error')
+    return self._value
 
 class UserGroups(object):
   '''
