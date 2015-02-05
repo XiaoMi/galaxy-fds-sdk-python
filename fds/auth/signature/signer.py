@@ -4,6 +4,7 @@ import hmac
 from email.utils import formatdate
 from hashlib import sha1
 from requests.auth import AuthBase
+from urllib import unquote
 from urlparse import urlparse
 
 from auth.common import Common
@@ -24,7 +25,7 @@ class Signer(AuthBase):
     request.headers[Common.DATE] = formatdate(timeval=None, localtime=False,
       usegmt=True)
     signature = self._sign_to_base64(request.method, request.headers,
-      request.url, self._app_secret)
+      unquote(request.url), self._app_secret)
     request.headers[Common.AUTHORIZATION] = 'Galaxy-V2 %s:%s' % (
       self._app_key, signature)
     return request

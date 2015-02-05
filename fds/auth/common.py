@@ -10,6 +10,7 @@ class Common(object):
   CONTENT_MD5 = "content-md5"
   CONTENT_TYPE = "content-type"
   DATE = "date"
+  RANGE = 'range'
 
   REQUEST_TIME_LIMIT = 900000 # 15min
 

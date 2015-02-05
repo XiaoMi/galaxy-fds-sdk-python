@@ -2,13 +2,21 @@ import json
 
 import requests
 
+from auth.common import Common
 from auth.signature.signer import Signer
+from fds_client_configuration import FDSClientConfiguration
 from galaxy_fds_client_exception import GalaxyFDSClientException
 from model.access_control_policy import AccessControlPolicy
+from model.fds_bucket import FDSBucket
+from model.fds_object import FDSObject
+from model.fds_object_listing import FDSObjectListing
 from model.fds_object_metadata import FDSObjectMetadata
+from model.fds_object_summary import FDSObjectSummary
 from model.permission import AccessControlList
 from model.permission import Grant
 from model.permission import Grantee
+from model.permission import Owner
+from model.put_object_result import PutObjectResult
 from model.subresource import SubResource
 
 class GalaxyFDSClient(object):
@@ -16,7 +24,8 @@ class GalaxyFDSClient(object):
   Client for Galaxy FDS Service.
   '''
 
-  def __init__(self, access_key, access_secret, config):
+  def __init__(self, access_key, access_secret,
+               config = FDSClientConfiguration()):
     '''
     :param access_key:    The app access key
     :param access_secret: The app access secret
@@ -27,6 +36,14 @@ class GalaxyFDSClient(object):
     self._access_secret = access_secret
     self._auth = Signer(self._access_key, self._access_secret)
     self._config = config
+
+  @property
+  def delimiter(self):
+    return self._delimiter
+
+  @delimiter.setter
+  def delimiter(self, delimiter):
+    self._delimiter = delimiter
 
   def does_bucket_exist(self, bucket_name):
     '''
@@ -48,7 +65,7 @@ class GalaxyFDSClient(object):
   def list_buckets(self):
     '''
     List all the buckets of the current developer.
-    :return: The listed buckets.
+    :return: A list of FDSBucket which contains name and owner of the bucket.
     '''
     uri = self._config.get_base_uri()
     response = requests.get(uri, auth=self._auth)
@@ -58,9 +75,11 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException(message)
     elif response.content:
       buckets_list = []
-      buckets = json.loads(response.content)['buckets']
+      json_response = json.loads(response.content)
+      buckets = json_response['buckets']
+      owner = Owner().from_json(json_response['owner'])
       for bucket in buckets:
-        buckets_list.append(bucket['name'])
+        buckets_list.append(FDSBucket(bucket['name'], owner))
       return buckets_list
     else:
       return list()
@@ -90,6 +109,55 @@ class GalaxyFDSClient(object):
         response.status_code, response.content)
       raise GalaxyFDSClientException(message)
 
+  def list_objects(self, bucket_name, prefix = '', delimiter = None):
+    '''
+    List all objects in a specified bucket with prefix. If the number of objects
+    in the bucket is larger than a threshold, you would get a FDSObjectListing
+    contains no FDSObjects. In this scenario, you should call
+    list_next_batch_of_objects with the returned value
+    :param bucket_name: The name of the bucket to whom the object is put
+    :param prefix:      The prefix of the object to list
+    :param delimiter:   The delimiter used in listing, using '/' if 'None' given
+    :return:  FDSObjectListing contains FDSObject list and other metadata
+    '''
+    if delimiter is None:
+      delimiter = self._delimiter
+    uri = '%s%s?prefix=%s&delimiter=%s' % \
+        (self._config.get_base_uri(), bucket_name, prefix, delimiter)
+    response = requests.get(uri, auth=self._auth)
+    if response.status_code == requests.codes.ok:
+      objects_list = FDSObjectListing(json.loads(response.content))
+      return objects_list
+    else:
+      message = 'List objects under bucket %s with prefix %s failed, ' \
+          'status=%s, reason=%s' % \
+          (bucket_name, prefix, response.status_code, response.content)
+      raise GalaxyFDSClientException(message)
+
+  def list_next_batch_of_objects(self, previous):
+    '''
+    List objects in a iterative manner
+    :param previous: The FDSObjectListing returned by previous call or list_objects
+    :return:  FDSObjectListing contains FDSObject list and other metadata, 'None'
+              if all objects returned by previous calls
+    '''
+    if not previous.is_truncated:
+      return None
+    bucket_name = previous.bucket_name
+    prefix = previous.prefix
+    marker = previous.next_marker
+    uri = "%s%s?prefix=%s&marker=%s" % \
+        (self._config.get_base_uri(), bucket_name, prefix, marker)
+    response = requests.get(uri, auth=self._auth)
+    if response.status_code == requests.codes.ok:
+      objects_list = FDSObjectListing(json.loads(response.content))
+      return objects_list
+    else:
+      message = 'List next batch of objects under bucket %s with prefix %s ' \
+          'and marker %s failed, status=%s, reason=%s' % \
+          (bucket_name, prefix, marker, response.status_code, response.content)
+      raise GalaxyFDSClientException(message)
+
   def put_object(self, bucket_name, object_name, data, metadata=None):
     '''
     Put the object to a specified bucket. If a object with the same name already
@@ -98,15 +166,17 @@ class GalaxyFDSClient(object):
     :param object_name: The name of the object to put
     :param data:        The data to put, bytes or a file like object
     :param metadata:    The metadata of the object
+    :return: The result of putting action server returns
     '''
     uri = '%s%s/%s' % (self._config.get_upload_base_uri(), bucket_name,
       object_name)
     response = requests.put(uri, data=data, auth=self._auth,
       headers=metadata)
-    if response.status_code != requests.codes.ok:
-      message = 'Put object failed, status=%s, reason=%s' % (
+    if response.status_code == requests.codes.ok:
+      return PutObjectResult(json.loads(response.content))
+    message = 'Put object failed, status=%s, reason=%s' % (
         response.status_code, response.content)
-      raise GalaxyFDSClientException(message)
+    raise GalaxyFDSClientException(message)
 
   def post_object(self, bucket_name, data, metadata=None):
     '''
@@ -115,33 +185,46 @@ class GalaxyFDSClient(object):
     :param bucket_name: The name of the bucket to whom the object is put
     :param data:        The data to put, bytes or a file like object
     :param metadata:    The metadata of the object
+    :return: The result of posting action server returns
     '''
     uri = '%s%s/' % (self._config.get_upload_base_uri(), bucket_name)
     response = requests.post(uri, data=data, auth=self._auth,
       headers=metadata)
-    if response.status_code != requests.codes.ok:
-      message = 'Post object failed, status=%s, reason=%s' % (
+    if response.status_code == requests.codes.ok:
+      return PutObjectResult(json.loads(response.content))
+    message = 'Post object failed, status=%s, reason=%s' % (
         response.status_code, response.content)
-      raise GalaxyFDSClientException(message)
+    raise GalaxyFDSClientException(message)
 
-  def get_object(self, bucket_name, object_name, streaming=False, size=4096):
+  def get_object(self, bucket_name, object_name, position = 0, size=4096):
     '''
     Get a specified object from a bucket.
     :param bucket_name: The name of the bucket from whom to get the object
     :param object_name: The name of the object to get
-    :param streaming:   The flag of whether the object result should be return
-                        as a iterator or not
+    :param position: The start index of object to get
     :param size:        The maximum size of each piece when return streaming is on
-    :return: The object content or content iterator if streaming is on
+    :return: The FDS object
     '''
+    if position < 0:
+      raise GalaxyFDSClientException("Seek position should be no less than 0")
     uri = '%s%s/%s' % (self._config.get_download_base_uri(), bucket_name,
       object_name)
-    response = requests.get(uri, auth=self._auth)
-    if response.status_code == requests.codes.ok:
-      if not streaming:
-        return response.content
-      else:
-        return response.iter_content(chunk_size=size)
+    if position > 0:
+      header = {Common.RANGE : 'bytes=%d-' % position}
+      response = requests.get(uri, auth=self._auth, headers=header)
+    else:
+      response = requests.get(uri, auth=self._auth)
+    if response.status_code == requests.codes.ok or \
+        response.status_code == requests.codes.partial:
+      obj = FDSObject()
+      obj.stream = response.iter_content(chunk_size=size)
+      summary = FDSObjectSummary()
+      summary.bucket_name = bucket_name
+      summary.object_name = object_name
+      summary.size = int(response.headers['content-length'])
+      obj.summary = summary
+      obj.metadata = self._parse_object_metadata_from_headers(response.headers)
+      return obj
     else:
       message = 'Get object failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -152,7 +235,7 @@ class GalaxyFDSClient(object):
     Check the existence of a specified object.
     :param bucket_name: The name of the bucket
     :param object_name: The name of the object to check
-    :return: True if the object exists, otherwise, Flase
+    :return: True if the object exists, otherwise, False
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
     response = requests.head(uri, auth=self._auth)
@@ -202,7 +285,8 @@ class GalaxyFDSClient(object):
     uri = '%s%s?%s' % (self._config.get_base_uri(), bucket_name,
       SubResource.ACL)
     acp = self._acl_to_acp(acl)
-    response = requests.put(uri, auth=self._auth, data=json.dumps(acp))
+    response = requests.put(uri, auth=self._auth, data=json.dumps(acp,
+        default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
       message = 'Set bucket acl failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -236,7 +320,8 @@ class GalaxyFDSClient(object):
     uri = '%s%s/%s?%s' % (
       self._config.get_base_uri(), bucket_name, object_name, SubResource.ACL)
     acp = self._acl_to_acp(acl)
-    response = requests.put(uri, auth=self._auth, data=json.dumps(acp))
+    response = requests.put(uri, auth=self._auth, data=json.dumps(acp,
+        default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
       message = 'Set object acl failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -280,6 +365,32 @@ class GalaxyFDSClient(object):
         response.status_code, response.content)
       raise GalaxyFDSClientException(message)
 
+  def generate_presigned_uri(self, base_uri, bucket_name, object_name,
+                             expiration, http_method = "GET"):
+    '''
+    Generate a pre-signed uri to share object with the public
+    :param base_uri: The base uri of rest server. Use client's default if 'None' pass
+    :param bucket_name: The name of the bucket
+    :param object_name: The name of the object
+    :param expiration: The expiration time of the uri: milliseconds from the Epoch
+    :param http_method: The http method used in uri
+    :return: The pre-signed uri string
+    '''
+    if not base_uri or base_uri == '':
+      base_uri = self._config.get_download_base_uri()
+    try:
+      uri = '%s%s/%s?%s=%s&%s=%s&' % \
+            (base_uri, bucket_name, object_name, \
+             Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+             Common.EXPIRES, str(int(expiration)))
+      signature = str(self._auth._sign_to_base64(http_method, None, uri, \
+                                                 self._auth._app_secret))
+      return '%s&%s=%s' % (uri, Common.SIGNATURE, signature)
+    except Exception, e:
+      message = 'Wrong expiration given. ' \
+                'Milliseconds since January 1, 1970 should be used. ' + str(e)
+      raise GalaxyFDSClientException(message)
+
   def _acp_to_acl(self, acp):
     '''
     Translate AccessControlPolicy to AccessControlList.
@@ -300,8 +411,11 @@ class GalaxyFDSClient(object):
     Translate AccessControlList to AccessControlPolicy.
     '''
     if acl is not None:
-      acp = AccessControlPolicy()
-      acp.access_control_list = acl.get_grant_list
+      acp = AccessControlPolicy(None)
+      owner = Owner()
+      owner.id = self._access_key
+      acp.owner = owner
+      acp.access_control_list = acl.get_grant_list()
       return acp
     return ''
 

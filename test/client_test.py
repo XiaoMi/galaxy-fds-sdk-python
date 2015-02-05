@@ -1,7 +1,14 @@
+#coding=utf-8
 import unittest
+import time
+import urllib2
+
+import sys
+sys.path.append('../fds')
 
 from galaxy_fds_client import GalaxyFDSClient
 from galaxy_fds_client_exception import GalaxyFDSClientException
+from fds_client_configuration import FDSClientConfiguration
 from model.permission import Permission
 from model.permission import AccessControlList
 from model.permission import Grant
@@ -12,20 +19,22 @@ class ClientTest(unittest.TestCase):
   def setUp(self):
     _access_key = "5341725076926"
     _access_secret = "vhlqXBAsWMbRIKZx+UBfPQ=="
-    self.client = GalaxyFDSClient(_access_key, _access_secret)
+    self.client = GalaxyFDSClient(_access_key, _access_secret,
+        FDSClientConfiguration("staging", False, False, False))
     self.bucket_name = 'test-python-15652193901'
 
   def test_uri(self):
     access_key = "5341725076926"
     access_secret = "vhlqXBAsWMbRIKZx+UBfPQ=="
-    uri = "http://files.fds.api.xiaomi.com"
-    client = GalaxyFDSClient(access_key, access_secret, uri)
+    client = GalaxyFDSClient(access_key, access_secret,
+        FDSClientConfiguration("staging", False, False, False))
     client.create_bucket("66777")
     client.delete_bucket("66777")
 
   def test_normal_bucket(self):
-    print self.client.list_buckets()
-    bucket_name = "testNormalBucket"
+    for bucket in self.client.list_buckets():
+      print bucket
+    bucket_name = "test-normal-bucket"
     self.assertFalse(self.client.does_bucket_exist(bucket_name))
     self.client.create_bucket(bucket_name)
     self.assertTrue(self.client.does_bucket_exist(bucket_name))
@@ -61,15 +70,17 @@ class ClientTest(unittest.TestCase):
 
   def test_bucket_acl(self):
     self.client.get_bucket_acl(self.bucket_name)
-    acl_ak = "5731725086326"
-    acl_access_secret = "h8TXiEAT0Yh0VFJ5ZIQmlA=="
+    acl_ak = "5521728735794"
+    acl_access_secret = "K7czwCuHODwZD49DD/qKzg=="
     bucketAcl = AccessControlList()
     bucketAcl.add_grant(Grant(Grantee("111"), Permission.READ))
-    bucketAcl.add_grant(Grant(Grantee(acl_ak), Permission.FULL_CONTROL))
+    bucketAcl.add_grant(Grant(Grantee('109901'), Permission.FULL_CONTROL))
     self.client.set_bucket_acl(self.bucket_name, bucketAcl)
-    self.client.get_bucket_acl(self.bucket_name)
-    acl_client = GalaxyFDSClient(acl_ak, acl_access_secret)
-    object_name = "testBucketAcl"
+    acl = self.client.get_bucket_acl(self.bucket_name)
+    self.assertTrue(bucketAcl.is_subset(acl))
+    acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
+        FDSClientConfiguration("staging", False, False, False))
+    object_name = "testBucketAcl7"
     acl_client.put_object(self.bucket_name, object_name, "hahhah")
     self.assertTrue(
       self.client.does_object_exists(self.bucket_name, object_name))
@@ -88,25 +99,58 @@ class ClientTest(unittest.TestCase):
     object_name = "test1"
     content = "test1"
     self.client.put_object(self.bucket_name, object_name, content)
-    print self.client.list_objects(self.bucket_name)
+    for bucket in self.client.list_objects(self.bucket_name):
+      print bucket
     print self.client.get_object_acl(self.bucket_name, object_name)
-    acl_ak = "5731725086326"
-    acl_access_secret = "h8TXiEAT0Yh0VFJ5ZIQmlA=="
+    acl_ak = "5521728735794"
+    acl_access_secret = "K7czwCuHODwZD49DD/qKzg=="
     objectAcl = AccessControlList()
     objectAcl.add_grant(Grant(Grantee("111"), Permission.READ))
-    objectAcl.add_grant(Grant(Grantee(acl_ak), Permission.FULL_CONTROL))
+    objectAcl.add_grant(Grant(Grantee("109901"), Permission.FULL_CONTROL))
     self.client.set_object_acl(self.bucket_name, object_name, objectAcl)
-    acl_client = GalaxyFDSClient(acl_ak, acl_access_secret)
+    acl = self.client.get_object_acl(self.bucket_name, object_name)
+    self.assertTrue(objectAcl.is_subset(acl))
+    acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
+        FDSClientConfiguration("staging", False, False, False))
     self.assertTrue(
-      acl_client.does_object_exists(self.bucket_name, object_name))
+        acl_client.does_object_exists(self.bucket_name, object_name))
     print acl_client.get_object(self.bucket_name, object_name)
     acl_client.delete_object(self.bucket_name, object_name)
     self.assertFalse(
-      self.client.does_object_exists(self.bucket_name, object_name))
+        self.client.does_object_exists(self.bucket_name, object_name))
 
-  def test_get_object_metadata(self):
+  def test_get_object_and_metadata(self):
     object_name = "test1"
     content = "test1"
     self.client.put_object(self.bucket_name, object_name, content)
+    whole_object = self.client.get_object(self.bucket_name, object_name)
+    self.assertEqual(whole_object.stream.next(), "test1")
+    partial_object = self.client.get_object(self.bucket_name, object_name, 2)
+    self.assertEqual(partial_object.stream.next(), "st1")
     metadata = self.client.get_object_metadata(self.bucket_name, object_name)
     print metadata.metadata
+
+  def test_rename_object(self):
+    object_old_name = "test_old1"
+    object_new_name = "test_new1"
+    self.client.put_object(self.bucket_name, object_old_name, "")
+    self.assertTrue(
+      self.client.does_object_exists(self.bucket_name, object_old_name))
+    self.assertFalse(
+      self.client.does_object_exists(self.bucket_name, object_new_name))
+    self.client.rename_object(self.bucket_name, object_old_name, object_new_name)
+    self.assertFalse(
+      self.client.does_object_exists(self.bucket_name, object_old_name))
+    self.assertTrue(
+      self.client.does_object_exists(self.bucket_name, object_new_name))
+    self.client.delete_object(self.bucket_name, object_new_name)
+
+  def test_generate_presigned_uri(self):
+    object_name = "中文测试"
+    content = "presigned"
+    self.client.put_object(self.bucket_name, object_name, content)
+    uri = self.client.generate_presigned_uri(None, self.bucket_name, object_name,
+                                             time.time() * 1000 + 60000)
+    download = urllib2.urlopen(uri).read()
+    self.assertEqual(content, download)
+

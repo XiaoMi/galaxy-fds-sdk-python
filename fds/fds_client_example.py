@@ -1,28 +1,44 @@
 import time
+import sys
 
 from fds_client_configuration import FDSClientConfiguration
 from galaxy_fds_client import GalaxyFDSClient
+from galaxy_fds_client_exception import GalaxyFDSClientException
+from model.permission import AccessControlList
+from model.permission import Grant
+from model.permission import Grantee
+from model.permission import Permission
 
-access_key = 'your_app_access_key'
-access_secret = 'your_app_secret_key'
+# Create default client
+access_key = 'your_access_key'
+access_secret = 'your_access_secret'
 config = FDSClientConfiguration()
 bucket_name = 'fds-python-example-%d' % int(time.time());
 
 fds_client = GalaxyFDSClient(access_key, access_secret, config)
 
+#####################
+# List buckets
+buckets = fds_client.list_buckets()
+if len(buckets) > 0:
+  bucket_name = str(buckets[-1])
+
 # Check and create the bucket
 if not fds_client.does_bucket_exist(bucket_name):
   fds_client.create_bucket(bucket_name)
+#####################
 
 #####################
 # Put a string object
-object_name = "test1.txt"
-object_content = "Hello world! This is a simple test!"
+object_name = 'test1.txt'
+object_content = 'Hello world! This is a simple test!'
 fds_client.put_object(bucket_name, object_name, object_content)
 
 # Get the object content
-read_object_content = fds_client.get_object(bucket_name, object_name)
-print read_object_content
+obj = fds_client.get_object(bucket_name, object_name)
+for chunk in obj.stream:
+  sys.stdout.write(chunk)
+print '\n'
 
 # Delete the object
 fds_client.delete_object(bucket_name, object_name)
@@ -35,17 +51,62 @@ object_content = open(object_name, 'r')
 fds_client.put_object(bucket_name, object_name, object_content)
 object_content.close()
 
-# Get the object content
-read_object_content = fds_client.get_object(bucket_name, object_name)
-#print read_object_content
+# Generate a pre-signed url
+import urllib2
+url = fds_client.generate_presigned_uri(None, bucket_name, object_name,
+    time.time() * 1000 + 60000)
 
-# Streaming get the object
-for data in fds_client.get_object(bucket_name, object_name, streaming=True):
-  print data
+# Get the object content
+print urllib2.urlopen(url).read()
 
 # Delete the object
 fds_client.delete_object(bucket_name, object_name)
 #####################
 
+#####################
+# Create another client
+other_ak = 'your_another_access_key' # corresponding developerId is 109901
+other_access_secret = 'your_another_access_secret'
+other_developerId = 'your_developer_id'
+other_client = GalaxyFDSClient(other_ak, other_access_secret)
+
+# Create a object and grant READ permission to others
+object_name = 'shared-object'
+fds_client.put_object(bucket_name, object_name, 'shared_content')
+object_acl = AccessControlList()
+object_acl.add_grant(Grant(Grantee(other_developerId), Permission.READ))
+fds_client.set_object_acl(bucket_name, object_name, object_acl)
+# Read the shared object by another client
+for chunk in other_client.get_object(bucket_name, object_name).stream:
+    sys.stdout.write(chunk)
+print '\n'
+
+# Grant FULL_CONTROL permission of bucket to others
+bucket_acl = AccessControlList()
+bucket_acl.add_grant(Grant(Grantee(other_developerId), Permission.FULL_CONTROL))
+fds_client.set_bucket_acl(bucket_name, bucket_acl)
+
+# Post an object by others
+result = other_client.post_object(bucket_name, 'post')
+print result.object_name
+other_client.delete_object(bucket_name, result.object_name)
+#####################
+
+#####################
+# List objects
+result = fds_client.list_objects(bucket_name)
+if result.is_truncated:
+  while result.is_truncated:
+    result = fds_client.list_next_batch_of_objects(result)
+    for object_summary in result.objects:
+      print object_summary.object_name
+else:
+  for object_summary in result.objects:
+    print object_summary.object_name
+#####################
+
 # Delete the bucket
-fds_client.delete_bucket(bucket_name)
+try:
+  fds_client.delete_bucket(bucket_name)
+except GalaxyFDSClientException, e:
+  print e.message

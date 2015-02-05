@@ -24,7 +24,21 @@ class Permission(object):
   FULL_CONTROL = 0xff
 
   def __init__(self, value):
-    self._value = value
+    if isinstance(value, (str, unicode)):
+      value = value.strip().upper()
+      if value == 'READ':
+        self._value = Permission.READ
+      elif value == 'WRITE':
+        self._value = Permission.WRITE
+      elif value == 'FULL_CONTROL':
+        self._value = Permission.FULL_CONTROL
+      else:
+        raise RuntimeError('Fatal error')
+    else:
+      self._value = value
+
+  def __eq__(self, other):
+    return self._value == other._value
 
   def to_string(self):
     value = self.get_value()
@@ -84,7 +98,7 @@ class Owner(dict):
   @staticmethod
   def from_json(json):
     if json != '':
-      owner = {}
+      owner = Owner()
       if 'id' in json.keys():
         owner.id = json['id']
       if 'displayName' in json.keys():
@@ -116,7 +130,6 @@ class Grant(dict):
     self.grantee = grantee
     self.type = GrantType.USER
     self.permission = permission
-    self.int_perm = permission
 
   @property
   def permission(self):
@@ -124,8 +137,7 @@ class Grant(dict):
 
   @permission.setter
   def permission(self, permission):
-    self['permission'] = permission.to_string()
-    self['int_perm'] = permission.get_value()
+    self['permission'] = Permission(permission)
 
   @property
   def grantee(self):
@@ -158,6 +170,12 @@ class AccessControlList(object):
     for k in self.acl:
       grants.append(self.acl[k])
     return grants
+
+  def is_subset(self, other):
+    for k in self.acl:
+      if self.acl[k] != other.acl[k]:
+        return False
+    return True
 
 
 
