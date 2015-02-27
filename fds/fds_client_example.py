@@ -1,27 +1,29 @@
 import time
 import sys
 
-from fds_client_configuration import FDSClientConfiguration
-from galaxy_fds_client import GalaxyFDSClient
-from galaxy_fds_client_exception import GalaxyFDSClientException
-from model.permission import AccessControlList
-from model.permission import Grant
-from model.permission import Grantee
-from model.permission import Permission
+from fds.fds_client_configuration import FDSClientConfiguration
+from fds.galaxy_fds_client import GalaxyFDSClient
+from fds.galaxy_fds_client_exception import GalaxyFDSClientException
+from fds.model.permission import AccessControlList
+from fds.model.permission import Grant
+from fds.model.permission import Grantee
+from fds.model.permission import Permission
 
 # Create default client
 access_key = 'your_access_key'
 access_secret = 'your_access_secret'
 config = FDSClientConfiguration()
-bucket_name = 'fds-python-example-%d' % int(time.time());
+bucket_name = 'fds-python-example-%d' % int(time.time())
 
 fds_client = GalaxyFDSClient(access_key, access_secret, config)
 
 #####################
 # List buckets
 buckets = fds_client.list_buckets()
-if len(buckets) > 0:
-  bucket_name = str(buckets[-1])
+print 'buckets list:'
+for bucket in buckets:
+  print bucket
+print
 
 # Check and create the bucket
 if not fds_client.does_bucket_exist(bucket_name):
@@ -110,3 +112,6 @@ try:
   fds_client.delete_bucket(bucket_name)
 except GalaxyFDSClientException, e:
   print e.message
+
+fds_client.delete_object(bucket_name, object_name)
+fds_client.delete_bucket(bucket_name)

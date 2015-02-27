@@ -15,11 +15,31 @@ class FDSClientConfiguration(object):
   def __init__(self, region_name = '',
       enable_cdn_for_download = True,
       enable_cdn_for_upload = False,
-      enable_https = True):
+      enable_https = True,
+      timeout = 30,
+      max_retries = 3):
     self._region_name = region_name
     self._enable_cdn_for_download = enable_cdn_for_download
     self._enable_cdn_for_upload = enable_cdn_for_upload
     self._enable_https = enable_https
+    self._timeout = timeout
+    self._max_retries = max_retries
+
+  @property
+  def timeout(self):
+    return self._timeout
+
+  @timeout.setter
+  def timeout(self, timeout):
+    self._timeout = timeout
+
+  @property
+  def max_retries(self):
+    return self._max_retries
+
+  @max_retries.setter
+  def max_retries(self, max_retries):
+    self._max_retries = max_retries
 
   def get_download_base_uri(self):
     return self._build_base_uri(self._enable_cdn_for_download)

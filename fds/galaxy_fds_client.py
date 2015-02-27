@@ -5,6 +5,7 @@ import requests
 from auth.common import Common
 from auth.signature.signer import Signer
 from fds_client_configuration import FDSClientConfiguration
+from fds_request import FDSRequest
 from galaxy_fds_client_exception import GalaxyFDSClientException
 from model.access_control_policy import AccessControlPolicy
 from model.fds_bucket import FDSBucket
@@ -29,13 +30,14 @@ class GalaxyFDSClient(object):
     '''
     :param access_key:    The app access key
     :param access_secret: The app access secret
-    :param uri:           The FDS service's base uri
+    :param config:        The FDS service's config
     '''
     self._delimiter = "/"
     self._access_key = access_key
     self._access_secret = access_secret
     self._auth = Signer(self._access_key, self._access_secret)
     self._config = config
+    self._request = FDSRequest(config.timeout, config.max_retries)
 
   @property
   def delimiter(self):
@@ -52,7 +54,7 @@ class GalaxyFDSClient(object):
     :return: True if the bucket exists, otherwise False
     '''
     uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
-    response = requests.head(uri, auth=self._auth)
+    response = self._request.head(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       return True
     elif response.status_code == requests.codes.not_found:
@@ -68,7 +70,7 @@ class GalaxyFDSClient(object):
     :return: A list of FDSBucket which contains name and owner of the bucket.
     '''
     uri = self._config.get_base_uri()
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
       message = 'List buckets failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -90,7 +92,7 @@ class GalaxyFDSClient(object):
     :param bucket_name: The name of the bucket to create
     '''
     uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
-    response = requests.put(uri, auth=self._auth)
+    response = self._request.put(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
       message = 'Create bucket failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -102,7 +104,7 @@ class GalaxyFDSClient(object):
     :param bucket_name: The name of the bucket to delete
     '''
     uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
-    response = requests.delete(uri, auth=self._auth)
+    response = self._request.delete(uri, auth=self._auth)
     if (response.status_code != requests.codes.ok and
         response.status_code != requests.codes.not_found):
       message = 'Delete bucket failed, status=%s, reason=%s' % (
@@ -124,7 +126,7 @@ class GalaxyFDSClient(object):
       delimiter = self._delimiter
     uri = '%s%s?prefix=%s&delimiter=%s' % \
         (self._config.get_base_uri(), bucket_name, prefix, delimiter)
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(json.loads(response.content))
       return objects_list
@@ -148,7 +150,7 @@ class GalaxyFDSClient(object):
     marker = previous.next_marker
     uri = "%s%s?prefix=%s&marker=%s" % \
         (self._config.get_base_uri(), bucket_name, prefix, marker)
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(json.loads(response.content))
       return objects_list
@@ -170,8 +172,8 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s/%s' % (self._config.get_upload_base_uri(), bucket_name,
       object_name)
-    response = requests.put(uri, data=data, auth=self._auth,
-      headers=metadata)
+    response = self._request.put(uri, data=data, auth=self._auth,
+        headers=metadata)
     if response.status_code == requests.codes.ok:
       return PutObjectResult(json.loads(response.content))
     message = 'Put object failed, status=%s, reason=%s' % (
@@ -188,8 +190,8 @@ class GalaxyFDSClient(object):
     :return: The result of posting action server returns
     '''
     uri = '%s%s/' % (self._config.get_upload_base_uri(), bucket_name)
-    response = requests.post(uri, data=data, auth=self._auth,
-      headers=metadata)
+    response = self._request.post(uri, data=data, auth=self._auth,
+        headers=metadata)
     if response.status_code == requests.codes.ok:
       return PutObjectResult(json.loads(response.content))
     message = 'Post object failed, status=%s, reason=%s' % (
@@ -211,9 +213,9 @@ class GalaxyFDSClient(object):
       object_name)
     if position > 0:
       header = {Common.RANGE : 'bytes=%d-' % position}
-      response = requests.get(uri, auth=self._auth, headers=header)
+      response = self._request.get(uri, auth=self._auth, headers=header)
     else:
-      response = requests.get(uri, auth=self._auth)
+      response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok or \
         response.status_code == requests.codes.partial:
       obj = FDSObject()
@@ -238,7 +240,7 @@ class GalaxyFDSClient(object):
     :return: True if the object exists, otherwise, False
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
-    response = requests.head(uri, auth=self._auth)
+    response = self._request.head(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       return True
     elif response.status_code == requests.codes.not_found:
@@ -255,7 +257,7 @@ class GalaxyFDSClient(object):
     :param object_name: The name of the object
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
-    response = requests.delete(uri, auth=self._auth)
+    response = self._request.delete(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
       message = 'Delete object failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -270,7 +272,7 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s/%s?renameTo=%s' % (self._config.get_base_uri(),
       bucket_name, src_object_name, dst_object_name)
-    response = requests.put(uri, auth=self._auth)
+    response = self._request.put(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
       message = 'Rename object failed, status=%s, reason=%s' % (
         response.status_code, response.content)
@@ -285,7 +287,7 @@ class GalaxyFDSClient(object):
     uri = '%s%s?%s' % (self._config.get_base_uri(), bucket_name,
       SubResource.ACL)
     acp = self._acl_to_acp(acl)
-    response = requests.put(uri, auth=self._auth, data=json.dumps(acp,
+    response = self._request.put(uri, auth=self._auth, data=json.dumps(acp,
         default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
       message = 'Set bucket acl failed, status=%s, reason=%s' % (
@@ -300,7 +302,7 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s?%s' % (self._config.get_base_uri(), bucket_name,
       SubResource.ACL)
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       acp = AccessControlPolicy(json.loads(response.content))
       acl = self._acp_to_acl(acp)
@@ -320,7 +322,7 @@ class GalaxyFDSClient(object):
     uri = '%s%s/%s?%s' % (
       self._config.get_base_uri(), bucket_name, object_name, SubResource.ACL)
     acp = self._acl_to_acp(acl)
-    response = requests.put(uri, auth=self._auth, data=json.dumps(acp,
+    response = self._request.put(uri, auth=self._auth, data=json.dumps(acp,
         default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
       message = 'Set object acl failed, status=%s, reason=%s' % (
@@ -336,7 +338,7 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s/%s?%s' % (
       self._config.get_base_uri(), bucket_name, object_name, SubResource.ACL)
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       acp = AccessControlPolicy(json.loads(response.content))
       acl = self._acp_to_acl(acp)
@@ -356,7 +358,7 @@ class GalaxyFDSClient(object):
     uri = '%s%s/%s?%s' % (
       self._config.get_base_uri(), bucket_name, object_name,
         SubResource.METADATA)
-    response = requests.get(uri, auth=self._auth)
+    response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       metadata = self._parse_object_metadata_from_headers(response.headers)
       return metadata

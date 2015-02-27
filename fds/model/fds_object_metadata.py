@@ -1,4 +1,4 @@
-from auth.common import Common
+from fds.auth.common import Common
 
 class FDSObjectMetadata(object):
   '''

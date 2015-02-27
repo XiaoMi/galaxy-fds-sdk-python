@@ -1,7 +1,9 @@
 import unittest
 
-from auth import Common
-from auth.signature import Signer
+import sys
+sys.path.append('../')
+from fds.auth import Common
+from fds.auth.signature import Signer
 
 class SignerTest(unittest.TestCase):
 

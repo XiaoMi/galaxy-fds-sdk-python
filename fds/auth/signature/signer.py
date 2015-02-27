@@ -7,8 +7,8 @@ from requests.auth import AuthBase
 from urllib import unquote
 from urlparse import urlparse
 
-from auth.common import Common
-from model.subresource import SubResource
+from fds.auth.common import Common
+from fds.model.subresource import SubResource
 
 class Signer(AuthBase):
   '''
