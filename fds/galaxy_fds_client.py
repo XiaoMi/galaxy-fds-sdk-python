@@ -1,4 +1,6 @@
 import json
+import hashlib
+from urllib import quote
 
 import requests
 
@@ -60,8 +62,11 @@ class GalaxyFDSClient(object):
     elif response.status_code == requests.codes.not_found:
       return False
     else:
-      message = 'Check bucket existence failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Check bucket existence failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def list_buckets(self):
@@ -72,8 +77,11 @@ class GalaxyFDSClient(object):
     uri = self._config.get_base_uri()
     response = self._request.get(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
-      message = 'List buckets failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'List buckets failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
     elif response.content:
       buckets_list = []
@@ -94,8 +102,11 @@ class GalaxyFDSClient(object):
     uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
     response = self._request.put(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
-      message = 'Create bucket failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Create bucket failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def delete_bucket(self, bucket_name):
@@ -107,8 +118,11 @@ class GalaxyFDSClient(object):
     response = self._request.delete(uri, auth=self._auth)
     if (response.status_code != requests.codes.ok and
         response.status_code != requests.codes.not_found):
-      message = 'Delete bucket failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Delete bucket failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def list_objects(self, bucket_name, prefix = '', delimiter = None):
@@ -131,9 +145,12 @@ class GalaxyFDSClient(object):
       objects_list = FDSObjectListing(json.loads(response.content))
       return objects_list
     else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
       message = 'List objects under bucket %s with prefix %s failed, ' \
-          'status=%s, reason=%s' % \
-          (bucket_name, prefix, response.status_code, response.content)
+          'status=%s, reason=%s%s' % \
+          (bucket_name, prefix, response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def list_next_batch_of_objects(self, previous):
@@ -155,9 +172,13 @@ class GalaxyFDSClient(object):
       objects_list = FDSObjectListing(json.loads(response.content))
       return objects_list
     else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
       message = 'List next batch of objects under bucket %s with prefix %s ' \
-          'and marker %s failed, status=%s, reason=%s' % \
-          (bucket_name, prefix, marker, response.status_code, response.content)
+          'and marker %s failed, status=%s, reason=%s%s' % \
+          (bucket_name, prefix, marker, response.status_code, response.content,
+          headers)
       raise GalaxyFDSClientException(message)
 
   def put_object(self, bucket_name, object_name, data, metadata=None):
@@ -172,12 +193,22 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s/%s' % (self._config.get_upload_base_uri(), bucket_name,
       object_name)
+    if metadata is None:
+      metadata = FDSObjectMetadata()
+    if self._config.enable_md5_calculate:
+      digest = hashlib.md5()
+      digest.update(data)
+      metadata.add_header(Common.CONTENT_MD5,digest.hexdigest())
+
     response = self._request.put(uri, data=data, auth=self._auth,
-        headers=metadata)
+        headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
       return PutObjectResult(json.loads(response.content))
-    message = 'Put object failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+    headers = ""
+    if self._config.debug:
+      headers = ' header=%s' % response.headers
+    message = 'Put object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
     raise GalaxyFDSClientException(message)
 
   def post_object(self, bucket_name, data, metadata=None):
@@ -190,12 +221,22 @@ class GalaxyFDSClient(object):
     :return: The result of posting action server returns
     '''
     uri = '%s%s/' % (self._config.get_upload_base_uri(), bucket_name)
+    if metadata is None:
+      metadata = FDSObjectMetadata()
+    if self._config.enable_md5_calculate:
+      digest = hashlib.md5()
+      digest.update(data)
+      metadata.add_header(Common.CONTENT_MD5,digest.hexdigest())
+
     response = self._request.post(uri, data=data, auth=self._auth,
-        headers=metadata)
+        headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
       return PutObjectResult(json.loads(response.content))
-    message = 'Post object failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+    headers = ""
+    if self._config.debug:
+      headers = ' header=%s' % response.headers
+    message = 'Post object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
     raise GalaxyFDSClientException(message)
 
   def get_object(self, bucket_name, object_name, position = 0, size=4096):
@@ -228,8 +269,11 @@ class GalaxyFDSClient(object):
       obj.metadata = self._parse_object_metadata_from_headers(response.headers)
       return obj
     else:
-      message = 'Get object failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def does_object_exists(self, bucket_name, object_name):
@@ -246,8 +290,11 @@ class GalaxyFDSClient(object):
     elif response.status_code == requests.codes.not_found:
       return False
     else:
-      message = 'Check object existence failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Check object existence failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def delete_object(self, bucket_name, object_name):
@@ -259,8 +306,11 @@ class GalaxyFDSClient(object):
     uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
     response = self._request.delete(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
-      message = 'Delete object failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Delete object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def rename_object(self, bucket_name, src_object_name, dst_object_name):
@@ -274,8 +324,11 @@ class GalaxyFDSClient(object):
       bucket_name, src_object_name, dst_object_name)
     response = self._request.put(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
-      message = 'Rename object failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Rename object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def set_bucket_acl(self, bucket_name, acl):
@@ -290,8 +343,11 @@ class GalaxyFDSClient(object):
     response = self._request.put(uri, auth=self._auth, data=json.dumps(acp,
         default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
-      message = 'Set bucket acl failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Set bucket acl failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def get_bucket_acl(self, bucket_name):
@@ -308,8 +364,11 @@ class GalaxyFDSClient(object):
       acl = self._acp_to_acl(acp)
       return acl
     else:
-      message = 'Get bucket acl failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get bucket acl failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def set_object_acl(self, bucket_name, object_name, acl):
@@ -325,8 +384,11 @@ class GalaxyFDSClient(object):
     response = self._request.put(uri, auth=self._auth, data=json.dumps(acp,
         default=lambda x : x.to_string()))
     if response.status_code != requests.codes.ok:
-      message = 'Set object acl failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Set object acl failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def get_object_acl(self, bucket_name, object_name):
@@ -344,8 +406,11 @@ class GalaxyFDSClient(object):
       acl = self._acp_to_acl(acp)
       return acl
     else:
-      message = 'Get object acl failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get object acl failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def get_object_metadata(self, bucket_name, object_name):
@@ -363,8 +428,11 @@ class GalaxyFDSClient(object):
       metadata = self._parse_object_metadata_from_headers(response.headers)
       return metadata
     else:
-      message = 'Get object metadata failed, status=%s, reason=%s' % (
-        response.status_code, response.content)
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get object metadata failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
   def generate_presigned_uri(self, base_uri, bucket_name, object_name,
@@ -387,11 +455,21 @@ class GalaxyFDSClient(object):
              Common.EXPIRES, str(int(expiration)))
       signature = str(self._auth._sign_to_base64(http_method, None, uri, \
                                                  self._auth._app_secret))
-      return '%s&%s=%s' % (uri, Common.SIGNATURE, signature)
+      return '%s%s/%s?%s=%s&%s=%s&%s=%s' % \
+             (base_uri, quote(bucket_name), quote(object_name), \
+              Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+              Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
     except Exception, e:
       message = 'Wrong expiration given. ' \
                 'Milliseconds since January 1, 1970 should be used. ' + str(e)
       raise GalaxyFDSClientException(message)
+
+  def generate_download_object_uri(self, bucket_name, object_name):
+    '''
+    Generate a URI for downloading object
+    '''
+    return '%s%s/%s' % (self._config.get_download_base_uri(), bucket_name,
+      object_name)
 
   def _acp_to_acl(self, acp):
     '''

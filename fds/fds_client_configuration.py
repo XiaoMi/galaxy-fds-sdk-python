@@ -22,8 +22,26 @@ class FDSClientConfiguration(object):
     self._enable_cdn_for_download = enable_cdn_for_download
     self._enable_cdn_for_upload = enable_cdn_for_upload
     self._enable_https = enable_https
+    self._enable_md5_calculate = False
     self._timeout = timeout
     self._max_retries = max_retries
+    self._debug = False
+
+  @property
+  def debug(self):
+    return self._debug
+
+  @debug.setter
+  def debug(self, debug):
+    self._debug = debug
+
+  @property
+  def enable_md5_calculate(self):
+    return self._enable_md5_calculate
+
+  @enable_md5_calculate.setter
+  def enable_md5_calculate(self, enable):
+    self._enable_md5_calculate = enable
 
   @property
   def timeout(self):
