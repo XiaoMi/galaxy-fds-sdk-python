@@ -15,7 +15,8 @@ from model.fds_object import FDSObject
 from model.fds_object_listing import FDSObjectListing
 from model.fds_object_metadata import FDSObjectMetadata
 from model.fds_object_summary import FDSObjectSummary
-from model.permission import AccessControlList
+from model.permission import AccessControlList, UserGroups, Permission, \
+  GrantType
 from model.permission import Grant
 from model.permission import Grantee
 from model.permission import Owner
@@ -434,6 +435,51 @@ class GalaxyFDSClient(object):
       message = 'Get object metadata failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
+
+  def prefetch_object(self, bucket_name, object_name):
+    '''
+    Prefetch the object to CDN
+    :param bucket_name: The name of the bucket
+    :param object_name: The name of the object
+    :return: void
+    '''
+    uri = '%s%s/%s?%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "prefetch")
+    response = self._request.put(uri, auth=self._auth, data="")
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Prefetch object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def refresh_object(self, bucket_name, object_name):
+    '''
+    Refresh the cache of the object in CDN
+    :param bucket_name: The name of the bucket
+    :param object_name: The name of the object
+    :return: void
+    '''
+    uri = '%s%s/%s?%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "refresh")
+    response = self._request.put(uri, auth=self._auth, data="")
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Refresh object failed, status=%s, reason=%s%s' %(
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def set_public(self, bucket_name, object_name, disable_prefetch = False):
+    acl = AccessControlList()
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
+    grant.type = GrantType.GROUP
+    acl.add_grant(grant)
+    self.set_object_acl(bucket_name, object_name, acl)
+    if not disable_prefetch:
+      self.prefetch_object(bucket_name, object_name)
 
   def generate_presigned_uri(self, base_uri, bucket_name, object_name,
                              expiration, http_method = "GET"):
