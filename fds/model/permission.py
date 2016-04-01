@@ -18,6 +18,20 @@ class Permission(object):
   WRITE = 0x02
 
   '''
+  The READ_OBJECT permission: when it applies to buckets it means
+  allow the grantee to read any object in the bucket;
+  it is not applicable to object.
+  '''
+  READ_OBJECTS = 0x04
+
+  '''
+  The SSO_WRITE permission: when applied to bucket, it means
+  users can put objects to the bucket with SSO auth
+  it is not applicable to object.
+  '''
+  SSO_WRITE = 0x08
+
+  '''
   The FULL_CONTROL permission: allows the grantee the READ and WRITE permission
   on the bucket/object.
   '''
@@ -30,6 +44,10 @@ class Permission(object):
         self._value = Permission.READ
       elif value == 'WRITE':
         self._value = Permission.WRITE
+      elif value == 'READ_OBJECTS':
+        self._value = Permission.READ_OBJECTS
+      elif value == 'SSO_WRITE':
+        self._value = Permission.SSO_WRITE
       elif value == 'FULL_CONTROL':
         self._value = Permission.FULL_CONTROL
       else:
@@ -46,6 +64,10 @@ class Permission(object):
       return 'READ'
     elif value == Permission.WRITE:
       return 'WRITE'
+    elif value == Permission.READ_OBJECTS:
+      return 'READ_OBJECTS'
+    elif value == Permission.SSO_WRITE:
+      return 'SSO_WRITE'
     elif value == Permission.FULL_CONTROL:
       return 'FULL_CONTROL'
     else:

@@ -28,6 +28,14 @@ class FDSObjectListing(dict):
     self['prefix'] = prefix
 
   @property
+  def delimiter(self):
+    return self['delimiter'];
+
+  @delimiter.setter
+  def delimiter(self, delimiter):
+    self['delimiter'] = delimiter
+
+  @property
   def marker(self):
     return self['marker']
 

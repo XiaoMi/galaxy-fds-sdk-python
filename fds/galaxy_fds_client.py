@@ -22,6 +22,8 @@ from model.permission import Grantee
 from model.permission import Owner
 from model.put_object_result import PutObjectResult
 from model.subresource import SubResource
+from model.init_multipart_upload_result import InitMultipartUploadResult
+from model.upload_part_result import UploadPartResult
 
 class GalaxyFDSClient(object):
   '''
@@ -154,6 +156,15 @@ class GalaxyFDSClient(object):
           (bucket_name, prefix, response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
+  def list_trash_objects(self, prefix = '', delimiter = None):
+    '''
+    Compared with list_objects, it returns a list of objects in the trash.
+    :param prefix: The prefix of bucket_name/object_name.
+    :param delimiter: The delimiter used in listing, using '/' if 'None' given.
+    :return: FDSObjectListing contains a list of objects in the trash.
+    '''
+    return self.list_objects("trash", prefix, delimiter);
+
   def list_next_batch_of_objects(self, previous):
     '''
     List objects in a iterative manner
@@ -165,9 +176,10 @@ class GalaxyFDSClient(object):
       return None
     bucket_name = previous.bucket_name
     prefix = previous.prefix
+    delimiter = previous.delimiter
     marker = previous.next_marker
-    uri = "%s%s?prefix=%s&marker=%s" % \
-        (self._config.get_base_uri(), bucket_name, prefix, marker)
+    uri = "%s%s?prefix=%s&delimiter=%s&marker=%s" % \
+        (self._config.get_base_uri(), bucket_name, prefix, delimiter, marker)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(json.loads(response.content))
@@ -311,6 +323,23 @@ class GalaxyFDSClient(object):
       if self._config.debug:
         headers = ' header=%s' % response.headers
       message = 'Delete object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def restore_object(self, bucket_name, object_name):
+    '''
+    Restore a specified object from trash.
+    :param bucket_name:     The name of the bucket
+    :param object_name: The name of the object
+    '''
+    uri = '%s%s/%srestore=' % (self._config.get_base_uri(),
+      bucket_name, object_name)
+    response = self._request.put(uri, auth=self._auth)
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Restore object failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
@@ -472,17 +501,110 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def set_public(self, bucket_name, object_name, disable_prefetch = False):
+  def set_public(self, bucket_name, object_name):
     acl = AccessControlList()
     grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
     grant.type = GrantType.GROUP
     acl.add_grant(grant)
     self.set_object_acl(bucket_name, object_name, acl)
-    if not disable_prefetch:
-      self.prefetch_object(bucket_name, object_name)
+
+  def init_multipart_upload(self, bucket_name, object_name):
+    '''
+    Init a multipart upload session
+    :param bucket_name:
+    :param object_name:
+    :return:
+    '''
+    uri = '%s%s/%s?%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "uploads")
+    response = self._request.put(uri, auth=self._auth, data="")
+    if response.status_code == requests.codes.ok:
+      result = InitMultipartUploadResult(json.loads(response.content))
+      return result
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' headers=%s' % response.headers
+      message = 'Init multipart upload failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def upload_part(self, bucket_name, object_name, upload_id, part_number, data):
+    '''
+    Upload a multipart upload part
+    :param bucket_name:
+    :param object_name:
+    :param upload_id:
+    :param part_number:
+    :param data:
+    :return:
+    '''
+    uri = '%s%s/%s?%s%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "uploadId=" +
+        upload_id, "&partNumber=" + str(part_number))
+    response = self._request.put(uri, auth=self._auth, data=data)
+    if response.status_code == requests.codes.ok:
+      result = UploadPartResult(json.loads(response.content))
+      return result
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' headers=%s' % response.headers
+      message = 'Upload part failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def complete_multipart_upload(self, bucket_name, object_name, upload_id,
+    metadata, upload_part_result_list):
+    '''
+    Complete a multipart upload
+    :param bucket_name:
+    :param object_name:
+    :param upload_id:
+    :param metadata:
+    :param upload_part_result_list:
+    :return:
+    '''
+    uri = '%s%s/%s?%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "uploadId=" +
+      upload_id)
+    if metadata is None:
+      metadata = FDSObjectMetadata()
+    response = self._request.put(uri, auth=self._auth,
+      data=upload_part_result_list, headers=metadata.metadata)
+    if response.status_code == requests.codes.ok:
+      result = PutObjectResult(json.loads(response.content))
+      return result
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' headers=%s' % response.headers
+      message = 'Complete multipart upload failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def abort_multipart_upload(self, bucket_name, object_name, upload_id):
+    '''
+    Abort a multipart upload
+    :param bucket_name:
+    :param object_name:
+    :param upload_id:
+    :return:
+    '''
+    uri = '%s%s/%s?%s' % (
+      self._config.get_base_uri(), bucket_name, object_name, "uploadId=" +
+        upload_id)
+    response = self._request.put(uri, auth=self._auth, data='')
+    if response != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' headers=%s' % response.headers
+      message = 'Abort multipart upload failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
 
   def generate_presigned_uri(self, base_uri, bucket_name, object_name,
-                             expiration, http_method = "GET"):
+                             expiration, http_method = "GET", content_type = None):
     '''
     Generate a pre-signed uri to share object with the public
     :param base_uri: The base uri of rest server. Use client's default if 'None' pass
@@ -493,13 +615,21 @@ class GalaxyFDSClient(object):
     :return: The pre-signed uri string
     '''
     if not base_uri or base_uri == '':
-      base_uri = self._config.get_download_base_uri()
+      if http_method == 'PUT' or http_method == 'POST':
+        base_uri = self._config.get_upload_base_uri()
+      elif http_method == 'DELETE':
+        base_uri = self._config.get_base_uri()
+      else:
+        base_uri = self._config.get_download_base_uri()
     try:
       uri = '%s%s/%s?%s=%s&%s=%s&' % \
             (base_uri, bucket_name, object_name, \
              Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
              Common.EXPIRES, str(int(expiration)))
-      signature = str(self._auth._sign_to_base64(http_method, None, uri, \
+      headers = None
+      if content_type != None and isinstance(content_type, basestring):
+        headers = {Common.CONTENT_TYPE: content_type}
+      signature = str(self._auth._sign_to_base64(http_method, headers, uri, \
                                                  self._auth._app_secret))
       return '%s%s/%s?%s=%s&%s=%s&%s=%s' % \
              (base_uri, quote(bucket_name), quote(object_name), \
@@ -550,11 +680,11 @@ class GalaxyFDSClient(object):
     Parse object metadata from the response headers.
     '''
     metadata = FDSObjectMetadata()
-    header_keys = response_headers.keys()
+    header_keys = [c.lower() for c in response_headers.keys()];
     for key in FDSObjectMetadata.PRE_DEFINED_METADATA:
-      if key in header_keys:
+      if key.lower() in header_keys:
         metadata.add_header(key, response_headers[key])
     for key in response_headers:
-      if key.startswith(FDSObjectMetadata.USER_DEFINED_METADATA_PREFIX):
+      if key.lower().startswith(FDSObjectMetadata.USER_DEFINED_METADATA_PREFIX):
         metadata.add_user_metadata(key, response_headers[key])
     return metadata
