@@ -1,25 +1,23 @@
 
-[![PyPi version](https://pypip.in/v/galaxy-fds-sdk/badge.png)](https://pypi.python.org/pypi/galaxy-fds-sdk) [![PyPi downloads](https://pypip.in/d/galaxy-fds-sdk/badge.png)](https://pypi.python.org/pypi/galaxy-fds-sdk)
+## 简介
 
-## Introduction
+Galaxy FDS SDK Python封装了FDS的API，用户安装SDK后，可以非常容易地调用FDS提供的接口。
 
-Galaxy-fds-sdk-python provides easy-to-use APIs to access FDS.
+## 安装
 
-## Install
+安装`pyhon-pip`后，执行`pip install galaxy-fds-sdk`即可。
 
-If `pyhon-pip` is installed, just need to `pip install galaxy-fds-sdk`.
+也可以在requirements.txt中写上`galaxy-fds-sdk>=1.0`。
 
-You can add `galaxy-fds-sdk>=1.0` in requirements.txt.
+## 使用
 
-## Usage
+使用前需要在小米开放平台注册得到应用的AccessKey和SecretKey。
 
-Before using galaxy-fds-sdk-python, you need to apply for access key and secret key in Xiaomi Open Platform.
-
-### Create Bucket
+### 创建Bucket
 
 ```
 import fds.GalaxyFDSClient
-client = GalaxyFDSClient("your_access_key", "your_access_secret")
+client = GalaxyFDSClient("5341725076926", "vhlqXBAsWMbRIKZx+UBfPQ==")
 
 try:
   client.create_bucket("bucket_name")
@@ -27,25 +25,25 @@ except GalaxyFDSClientException as e:
   print e.message
 ```
 
-### Upload Object
+### 上传Object
 
 ```
 client.put_object("bucket_name", "object_name", "value")
 ```
 
-### Download Object
+### 下载Object
 
 ```
 client.get_object("bucket_name", "object_name")
 ```
 
-### Delete Object
+### 删除Object
 
 ```
 client.delete_object("bucket_name", "object_name")
 ```
 
-### Delete Bucket
+### 删除Bucket
 
 ```
 try:
@@ -54,25 +52,25 @@ except GalaxyFDSClientException as e:
   print e.message
 ```
 
-### Other Operations
+### 其他
 
-For more usages, please refer to FDS documents and examples.
+更多API操作请参考示例代码和文档。
 
-## Implement
+## 实现
 
-### HTTP Requests
+### HTTP请求
 
-FDS server only accepts requests with authentication signature. So we use [requests](https://github.com/kennethreitz/requests) to send HTTP requests. Compared with `urllib` and `urllib2`, using `requests` is much more efficient.
+FDS服务端可以响应带签名认证的HTTP请求，我们使用了[requests](https://github.com/kennethreitz/requests)库发送和接收请求。相比原生的`urllib`和`urllib2`，使用`requests`后代码更加高效和易读，这是相当成熟的类库，连AWS的Python SDK也是基于它来开发的。
 
-### Signature
+### 签名
 
-We implement `requests` [AuthBase](http://docs.python-requests.org/en/latest/user/authentication/) with FDS signature algorithm.
+我们基于`requests`的[AuthBase](http://docs.python-requests.org/en/latest/user/authentication/)实现了FDS的签名认证算法。算法实现请参考FDS官方文档。
 
 ## API
 
-We implement all the API with FDS documents. The details can be refer to official documents.
+通过阅读FDS的API文档，我们实现了上传下载Object等接口。HTTP请求参数、Header等信息参见FDS官方文档。
 
-## Reference
+### 参考资料
 
 * [Python-requests-aws](https://github.com/tax/python-requests-aws)
 * [Requests stream upload](http://docs.python-requests.org/en/latest/user/advanced/#streaming-requests)
