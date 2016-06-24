@@ -1,18 +1,16 @@
 class FDSClientConfiguration(object):
 
-  HTTP = 'http://'
+  URI_HTTP = 'http://'
 
-  HTTPS = 'https://'
+  URI_HTTPS = 'https://'
 
-  BASE_HTTP_HOST = 'files.fds.api.xiaomi.com'
+  URI_CDN = 'cdn'
 
-  BASE_CDN_HTTP_HOST = 'cdn.fds.api.xiaomi.com'
+  URI_SUFFIX = 'fds.api.xiaomi.com'
 
-  BASE_HTTPS_HOST = 'files.fds.api.xiaomi.com'
+  URI_CDN_SUFFIX = 'fds.api.mi-img.com'
 
-  BASE_CDN_HTTPS_HOST = 'cdn.fds-ssl.api.xiaomi.com'
-
-  def __init__(self, region_name = '',
+  def __init__(self, region_name = 'cnbj0',
       enable_cdn_for_download = True,
       enable_cdn_for_upload = False,
       enable_https = True,
@@ -71,22 +69,14 @@ class FDSClientConfiguration(object):
   def _build_base_uri(self, enable_cdn):
     base_uri = str()
     if self._enable_https:
-      base_uri += self.HTTPS
+      base_uri += self.URI_HTTPS
     else:
-      base_uri += self.HTTP
-
-    if len(self._region_name) > 0:
-      base_uri += self._region_name + '-'
+      base_uri += self.URI_HTTP
 
     if enable_cdn:
-      if self._enable_https:
-        base_uri += self.BASE_CDN_HTTPS_HOST
-      else:
-        base_uri += self.BASE_CDN_HTTP_HOST
+      base_uri += self.URI_CDN + '.' + self._region_name + '.' + self.URI_CDN_SUFFIX
     else:
-      if self._enable_https:
-        base_uri += self.BASE_HTTPS_HOST
-      else:
-        base_uri += self.BASE_HTTP_HOST
+      base_uri += self._region_name + '.' + self.URI_SUFFIX
+
     base_uri += '/'
     return base_uri
