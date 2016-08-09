@@ -1,18 +1,16 @@
 class FDSClientConfiguration(object):
 
-  HTTP = 'http://'
+  URI_HTTP = 'http://'
 
-  HTTPS = 'https://'
+  URI_HTTPS = 'https://'
 
-  BASE_HTTP_HOST = 'files.fds.api.xiaomi.com'
+  URI_CDN = 'cdn'
 
-  BASE_CDN_HTTP_HOST = 'cdn.fds.api.xiaomi.com'
+  URI_SUFFIX = 'fds.api.xiaomi.com'
 
-  BASE_HTTPS_HOST = 'files.fds.api.xiaomi.com'
+  URI_CDN_SUFFIX = 'fds.api.mi-img.com'
 
-  BASE_CDN_HTTPS_HOST = 'cdn.fds-ssl.api.xiaomi.com'
-
-  def __init__(self, region_name = '',
+  def __init__(self, region_name = 'cnbj0',
       enable_cdn_for_download = True,
       enable_cdn_for_upload = False,
       enable_https = True,
@@ -26,6 +24,7 @@ class FDSClientConfiguration(object):
     self._timeout = timeout
     self._max_retries = max_retries
     self._debug = False
+    self._endpoint = ''
 
   @property
   def debug(self):
@@ -59,6 +58,9 @@ class FDSClientConfiguration(object):
   def max_retries(self, max_retries):
     self._max_retries = max_retries
 
+  def set_endpoint(self, endpoint):
+    self._endpoint = endpoint
+
   def get_download_base_uri(self):
     return self._build_base_uri(self._enable_cdn_for_download)
 
@@ -71,22 +73,19 @@ class FDSClientConfiguration(object):
   def _build_base_uri(self, enable_cdn):
     base_uri = str()
     if self._enable_https:
-      base_uri += self.HTTPS
+      base_uri += self.URI_HTTPS
     else:
-      base_uri += self.HTTP
+      base_uri += self.URI_HTTP
 
-    if len(self._region_name) > 0:
-      base_uri += self._region_name + '-'
-
-    if enable_cdn:
-      if self._enable_https:
-        base_uri += self.BASE_CDN_HTTPS_HOST
-      else:
-        base_uri += self.BASE_CDN_HTTP_HOST
+    region = self._region_name
+    if not region:
+      region = "cnbj0"
+    if self._endpoint:
+      base_uri += self._endpoint
+    elif enable_cdn:
+      base_uri += self.URI_CDN + '.' + region + '.' + self.URI_CDN_SUFFIX
     else:
-      if self._enable_https:
-        base_uri += self.BASE_HTTPS_HOST
-      else:
-        base_uri += self.BASE_HTTP_HOST
+      base_uri += region + '.' + self.URI_SUFFIX
+
     base_uri += '/'
     return base_uri

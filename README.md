@@ -16,7 +16,7 @@ Galaxy FDS SDK Python封装了FDS的API，用户安装SDK后，可以非常容�
 ### 创建Bucket
 
 ```
-import fds.GalaxyFDSClient
+from fds import GalaxyFDSClient, GalaxyFDSClientException
 client = GalaxyFDSClient("5341725076926", "vhlqXBAsWMbRIKZx+UBfPQ==")
 
 try:
