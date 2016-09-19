@@ -149,9 +149,9 @@ class Grant(dict):
   The grant class.
   '''
   def __init__(self, _grantee, _permission, _type=GrantType.USER):
-    self._grantee = _grantee
-    self._permission = _permission
-    self._type = _type
+    self['grantee'] = _grantee
+    self['permission'] = Permission(_permission)
+    self['type'] = _type
 
   @property
   def permission(self):
