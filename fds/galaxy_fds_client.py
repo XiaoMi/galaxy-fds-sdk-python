@@ -167,7 +167,7 @@ class GalaxyFDSClient(object):
 
   def list_next_batch_of_objects(self, previous):
     '''
-    List objects in a iterative manner
+    List objects in an iterative manner
     :param previous: The FDSObjectListing returned by previous call or list_objects
     :return:  FDSObjectListing contains FDSObject list and other metadata, 'None'
               if all objects returned by previous calls
@@ -503,8 +503,7 @@ class GalaxyFDSClient(object):
 
   def set_public(self, bucket_name, object_name):
     acl = AccessControlList()
-    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
-    grant.type = GrantType.GROUP
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ, GrantType.GROUP)
     acl.add_grant(grant)
     self.set_object_acl(bucket_name, object_name, acl)
 

@@ -8,6 +8,3 @@ class PutObjectResult(object):
     self.access_key_id = json['accessKeyId']
     self.signature = json['signature']
     self.expires = json['expires']
-
-
-
