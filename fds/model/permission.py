@@ -148,10 +148,10 @@ class Grant(dict):
   '''
   The grant class.
   '''
-  def __init__(self, grantee, permission):
-    self.grantee = grantee
-    self.type = GrantType.USER
-    self.permission = permission
+  def __init__(self, _grantee, _permission, _type=GrantType.USER):
+    self['grantee'] = _grantee
+    self['permission'] = Permission(_permission)
+    self['type'] = _type
 
   @property
   def permission(self):
@@ -174,8 +174,8 @@ class Grant(dict):
     return self['type']
 
   @type.setter
-  def type(self, type):
-    self['type'] = type
+  def type(self, _type):
+    self['type'] = _type
 
 class AccessControlList(object):
   '''
@@ -198,8 +198,3 @@ class AccessControlList(object):
       if self.acl[k] != other.acl[k]:
         return False
     return True
-
-
-
-
-

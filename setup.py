@@ -1,12 +1,9 @@
-try:
-  from setuptools import setup
-  setup()
-except ImportError:
-  from distutils.core import setup
+from setuptools import setup, find_packages
 
 setup(
   name='galaxy-fds-sdk',
-  version='1.1.4',
+  version='1.1.5',
+  url='https://github.com/XiaoMi/galaxy-fds-sdk-python',
   author='haxiaolin',
   author_email='haxiaolin@xiaomi.com',
   include_package_data=True,

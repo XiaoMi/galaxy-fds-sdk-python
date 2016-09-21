@@ -31,12 +31,16 @@ class GalaxyFDSClient(object):
   '''
 
   def __init__(self, access_key, access_secret,
-               config = FDSClientConfiguration()):
+               config=None):
     '''
     :param access_key:    The app access key
     :param access_secret: The app access secret
     :param config:        The FDS service's config
     '''
+
+    if config is None:
+      config = FDSClientConfiguration()
+
     self._delimiter = "/"
     self._access_key = access_key
     self._access_secret = access_secret
@@ -167,7 +171,7 @@ class GalaxyFDSClient(object):
 
   def list_next_batch_of_objects(self, previous):
     '''
-    List objects in a iterative manner
+    List objects in an iterative manner
     :param previous: The FDSObjectListing returned by previous call or list_objects
     :return:  FDSObjectListing contains FDSObject list and other metadata, 'None'
               if all objects returned by previous calls
@@ -503,8 +507,7 @@ class GalaxyFDSClient(object):
 
   def set_public(self, bucket_name, object_name):
     acl = AccessControlList()
-    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
-    grant.type = GrantType.GROUP
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ, GrantType.GROUP)
     acl.add_grant(grant)
     self.set_object_acl(bucket_name, object_name, acl)
 
