@@ -24,23 +24,46 @@ from model.put_object_result import PutObjectResult
 from model.subresource import SubResource
 from model.init_multipart_upload_result import InitMultipartUploadResult
 from model.upload_part_result import UploadPartResult
+import os
+import sys
+import utils
 
 class GalaxyFDSClient(object):
   '''
   Client for Galaxy FDS Service.
   '''
 
-  def __init__(self, access_key, access_secret,
-               config = FDSClientConfiguration()):
+  def __init__(self, access_key=None, access_secret=None, config=None):
     '''
     :param access_key:    The app access key
     :param access_secret: The app access secret
     :param config:        The FDS service's config
     '''
     self._delimiter = "/"
-    self._access_key = access_key
-    self._access_secret = access_secret
-    self._auth = Signer(self._access_key, self._access_secret)
+
+    if access_key == None or access_secret == None:
+      # Get keys from environment variables
+      if "XIAOMI_ACCESS_KEY" in os.environ and "XIAOMI_SECRET_KEY" in os.environ:
+        self._access_key = os.environ["XIAOMI_ACCESS_KEY"]
+        self._secret_key = os.environ["XIAOMI_SECRET_KEY"]
+      else:
+        # Read keys from configuration file
+        config_filename = os.path.join(
+            os.path.expanduser('~'), ".config/xiaomi/config")
+        if os.path.exists(config_filename):
+          with open(config_filename) as f:
+            data = json.load(f)
+            self._access_key = data["access_key"]
+            self._secret_key = data["secret_key"]
+    else:
+      self._access_key = access_key
+      self._secret_key = access_secret
+
+    self._auth = Signer(self._access_key, self._secret_key)
+    if config == None:
+      config = FDSClientConfiguration()
+      if "FDS_ENDPOINT" in os.environ:
+        config.set_endpoint(os.environ["FDS_ENDPOINT"])
     self._config = config
     self._request = FDSRequest(config.timeout, config.max_retries)
 
@@ -194,6 +217,17 @@ class GalaxyFDSClient(object):
           headers)
       raise GalaxyFDSClientException(message)
 
+  def put_object_with_uri(self, uri, data, metadata=None):
+    '''
+    Put the object with the uri.
+    :param uri:         The uri of th bucket and object
+    :param data:        The data to put, bytes or a file like object
+    :param metadata:    The metadata of the object
+    :return: The result of putting action server returns
+    '''
+    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    self.put_object(bucket_name, object_name, data, metadata)
+
   def put_object(self, bucket_name, object_name, data, metadata=None):
     '''
     Put the object to a specified bucket. If a object with the same name already
@@ -252,7 +286,18 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
     raise GalaxyFDSClientException(message)
 
-  def get_object(self, bucket_name, object_name, position = 0, size=4096):
+  def get_object_with_uri(self, uri, position=0, size=4096):
+    '''
+    Get a specified object from fds uri.
+    :param uri:         The uri of th bucket and object
+    :param position:    The start index of object to get
+    :param size:        The maximum size of each piece when return streaming is on
+    :return:            The FDS object
+    '''
+    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    return self.get_object(bucket_name, object_name, position, size)
+
+  def get_object(self, bucket_name, object_name, position=0, size=4096):
     '''
     Get a specified object from a bucket.
     :param bucket_name: The name of the bucket from whom to get the object
@@ -288,6 +333,36 @@ class GalaxyFDSClient(object):
       message = 'Get object failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
+
+  def download_object_with_uri(self, uri, data_file, offset=0, length=-1):
+    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    self.download_object(bucket_name, object_name, data_file, offset, length)
+
+  def download_object(self, bucket_name, object_name, data_file, offset=0, length=-1):
+    fds_object = self.get_object(bucket_name=bucket_name,
+                                 object_name=object_name,
+                                 position=offset)
+    length_left = length
+    if length_left == -1:
+        length_left = sys.maxint
+    try:
+        if data_file:
+            with open(data_file, "w") as f:
+                for chunk in fds_object.stream:
+                    l = min(length_left, len(chunk));
+                    f.write(chunk[0:l])
+                    length_left -= l
+                    if length_left <= 0:
+                        break
+        else:
+            for chunk in fds_object.stream:
+                l = min(length_left, len(chunk))
+                sys.stdout.write(chunk[0:l])
+                length_left -= l
+                if length_left <= 0:
+                    break
+    finally:
+        fds_object.stream.close()
 
   def does_object_exists(self, bucket_name, object_name):
     '''

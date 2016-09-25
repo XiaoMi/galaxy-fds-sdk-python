@@ -6,7 +6,7 @@ except ImportError:
 
 setup(
   name='galaxy-fds-sdk',
-  version='1.1.4',
+  version='1.2.8',
   author='haxiaolin',
   author_email='haxiaolin@xiaomi.com',
   include_package_data=True,

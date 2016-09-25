@@ -42,6 +42,12 @@ for chunk in obj.stream:
   sys.stdout.write(chunk)
 print '\n'
 
+# Download the object file
+data_file = "/tmp/fds_file"
+client.download(bucket_name, object_name, data_file)
+data_file2 = "/tmp/fds_file2"
+client.download_object_with_uri("fds://" + bucket_name + "/" + object_name, data_file2)
+
 # Delete the object
 fds_client.delete_object(bucket_name, object_name)
 #####################
@@ -67,9 +73,9 @@ fds_client.delete_object(bucket_name, object_name)
 
 #####################
 # Create another client
-other_ak = 'your_another_access_key' # corresponding developerId is 109901
-other_access_secret = 'your_another_access_secret'
-other_developerId = 'your_developer_id'
+other_ak = 'other_access_key' # corresponding developerId is 109901
+other_access_secret = 'other_access_secret'
+other_developerId = 'other_developerId'
 other_client = GalaxyFDSClient(other_ak, other_access_secret)
 
 # Create a object and grant READ permission to others
