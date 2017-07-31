@@ -24,9 +24,11 @@ from model.put_object_result import PutObjectResult
 from model.subresource import SubResource
 from model.init_multipart_upload_result import InitMultipartUploadResult
 from model.upload_part_result import UploadPartResult
+from model.upload_part_result_list import UploadPartResultList
 import os
 import sys
 import utils
+
 
 class GalaxyFDSClient(object):
   '''
@@ -42,19 +44,8 @@ class GalaxyFDSClient(object):
     self._delimiter = "/"
 
     if access_key == None or access_secret == None:
-      # Get keys from environment variables
-      if "XIAOMI_ACCESS_KEY" in os.environ and "XIAOMI_SECRET_KEY" in os.environ:
-        self._access_key = os.environ["XIAOMI_ACCESS_KEY"]
-        self._secret_key = os.environ["XIAOMI_SECRET_KEY"]
-      else:
-        # Read keys from configuration file
-        config_filename = os.path.join(
-            os.path.expanduser('~'), ".config/xiaomi/config")
-        if os.path.exists(config_filename):
-          with open(config_filename) as f:
-            data = json.load(f)
-            self._access_key = data["access_key"]
-            self._secret_key = data["secret_key"]
+      self._access_key = self.load_access_key()
+      self._secret_key = self.load_secret_key()
     else:
       self._access_key = access_key
       self._secret_key = access_secret
@@ -62,10 +53,47 @@ class GalaxyFDSClient(object):
     self._auth = Signer(self._access_key, self._secret_key)
     if config == None:
       config = FDSClientConfiguration()
-      if "FDS_ENDPOINT" in os.environ:
-        config.set_endpoint(os.environ["FDS_ENDPOINT"])
+      config.set_endpoint(self.load_endpoint())
+
     self._config = config
     self._request = FDSRequest(config.timeout, config.max_retries)
+
+  def load_endpoint(self):
+    endpoint = None
+    if endpoint is None and "XIAOMI_FDS_ENDPOINT" in os.environ:
+      endpoint = os.environ["XIAOMI_FDS_ENDPOINT"]
+    if endpoint is None and "FDS_ENDPOINT" in os.environ:
+      endpoint = os.environ["FDS_ENDPOINT"]
+    if endpoint is None:
+      endpoint = self.load_config("xiaomi_fds_endpoint")
+    return endpoint
+
+  def load_access_key(self):
+    access_key = None
+    if access_key is None and "XIAOMI_ACCESS_KEY_ID" in os.environ:
+      access_key = os.environ["XIAOMI_ACCESS_KEY_ID"]
+    if access_key is None and "XIAOMI_ACCESS_KEY" in os.environ:
+      access_key = os.environ["XIAOMI_ACCESS_KEY"]
+    if access_key is None:
+      access_key = self.load_config("xiaomi_access_key_id")
+    return access_key
+
+  def load_secret_key(self):
+    secret_key = None
+    if secret_key is None and "XIAOMI_SECRET_ACCESS_KEY" in os.environ:
+      secret_key = os.environ["XIAOMI_SECRET_ACCESS_KEY"]
+    if secret_key is None and "XIAOMI_SECRET_KEY" in os.environ:
+      secret_key = os.environ["XIAOMI_SECRET_KEY"]
+    if secret_key is None:
+      self.load_config("xiaomi_secret_access_key")
+    return secret_key
+
+  def load_config(self, config_key):
+    config_filename = os.path.join(os.path.expanduser('~'), ".config/xiaomi/config")
+    if os.path.exists(config_filename):
+      with open(config_filename) as f:
+        data = json.load(f)
+        return data[config_key]
 
   @property
   def delimiter(self):
@@ -116,6 +144,30 @@ class GalaxyFDSClient(object):
       owner = Owner().from_json(json_response['owner'])
       for bucket in buckets:
         buckets_list.append(FDSBucket(bucket['name'], owner))
+      return buckets_list
+    else:
+      return list()
+
+  def list_authorized_buckets(self):
+    '''
+    List all the authorized buckets of the current developer.
+    :return: A list of FDSBucket which contains name and owner of the bucket.
+    '''
+    uri = self._config.get_base_uri() + '?authorizedBuckets'
+    response = self._request.get(uri, auth=self._auth)
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'List buckets failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+    elif response.content:
+      buckets_list = []
+      json_response = json.loads(response.content)
+      buckets = json_response['buckets']
+      for bucket in buckets:
+        buckets_list.append(FDSBucket(bucket['name'], ''))
       return buckets_list
     else:
       return list()
@@ -297,13 +349,14 @@ class GalaxyFDSClient(object):
     bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
     return self.get_object(bucket_name, object_name, position, size)
 
-  def get_object(self, bucket_name, object_name, position=0, size=4096):
+  def get_object(self, bucket_name, object_name, position=0, size=4096, stream=None):
     '''
     Get a specified object from a bucket.
     :param bucket_name: The name of the bucket from whom to get the object
     :param object_name: The name of the object to get
     :param position: The start index of object to get
     :param size:        The maximum size of each piece when return streaming is on
+    :param stream:      Set True to enable streaming, otherwise, whole object content is read to memory
     :return: The FDS object
     '''
     if position < 0:
@@ -312,9 +365,9 @@ class GalaxyFDSClient(object):
       object_name)
     if position > 0:
       header = {Common.RANGE : 'bytes=%d-' % position}
-      response = self._request.get(uri, auth=self._auth, headers=header)
+      response = self._request.get(uri, auth=self._auth, headers=header, stream=stream)
     else:
-      response = self._request.get(uri, auth=self._auth)
+      response = self._request.get(uri, auth=self._auth, stream=stream)
     if response.status_code == requests.codes.ok or \
         response.status_code == requests.codes.partial:
       obj = FDSObject()
@@ -669,8 +722,8 @@ class GalaxyFDSClient(object):
     uri = '%s%s/%s?%s' % (
       self._config.get_base_uri(), bucket_name, object_name, "uploadId=" +
         upload_id)
-    response = self._request.put(uri, auth=self._auth, data='')
-    if response != requests.codes.ok:
+    response = self._request.delete(uri, auth=self._auth, data='')
+    if response.status_code != requests.codes.ok:
       headers = ""
       if self._config.debug:
         headers = ' headers=%s' % response.headers
@@ -763,3 +816,20 @@ class GalaxyFDSClient(object):
       if key.lower().startswith(FDSObjectMetadata.USER_DEFINED_METADATA_PREFIX):
         metadata.add_user_metadata(key, response_headers[key])
     return metadata
+
+  def list_all_objects(self, bucket_name, prefix ='', delimiter = None):
+    '''
+    traverse all objects in the bucket
+    :param bucket_name:
+    :param prefix:
+    :param delimiter:
+    :return:
+    '''
+    result = self.list_objects(bucket_name, prefix, delimiter)
+    while True:
+      for object_summary in result.objects:
+        yield object_summary
+      if result.is_truncated:
+        result = self.list_next_batch_of_objects(result)
+      else:
+        break

@@ -16,6 +16,14 @@ class FDSClientConfiguration(object):
       enable_https = True,
       timeout = 30,
       max_retries = 3):
+    """
+    :param region_name:
+    :param enable_cdn_for_download:
+    :param enable_cdn_for_upload:
+    :param enable_https:
+    :param timeout: connection and read timeout (seconds)
+    :param max_retries:
+    """
     self._region_name = region_name
     self._enable_cdn_for_download = enable_cdn_for_download
     self._enable_cdn_for_upload = enable_cdn_for_upload

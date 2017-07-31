@@ -1,11 +1,11 @@
 #wrap the requests library
 
 import requests
+from requests.sessions import HTTPAdapter
 
 class FDSRequest:
   def __init__(self, timeout, max_retries):
-    from requests.sessions import HTTPAdapter
-    self._adapter = HTTPAdapter(max_retries = max_retries)
+    self._max_retries = max_retries
     self._timeout = timeout
 
   def request(self, method, url, kwargs):
@@ -16,8 +16,8 @@ class FDSRequest:
 
     kwargs.setdefault('timeout', self._timeout)
     session = requests.Session()
-    session.mount("http://", self._adapter)
-    session.mount("https://", self._adapter)
+    session.mount("http://", HTTPAdapter(max_retries=self._max_retries))
+    session.mount("https://", HTTPAdapter(max_retries=self._max_retries))
     response = session.request(method=method, url=url, **kwargs)
     # By explicitly closing the session, we avoid leaving sockets open which
     # can trigger a ResourceWarning in some cases, and look like a memory leak
