@@ -268,20 +268,19 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
     upload_token = fds_client.init_multipart_upload(bucket_name=bucket_name,
                                                     object_name=object_name)
     logger.debug('Upload id [' + upload_token.upload_id + ']')
-    byte_buffer = bytearray(multipart_upload_buffer_size)
     part_number = 1
     upload_list = []
     while True:
-      length = stream.readinto(byte_buffer)
-      if length <= 0:
+      data = stream.read(multipart_upload_buffer_size)
+      if len(data) <= 0:
         break
-      logger.info("Part %d read %d bytes" % (part_number, length))
+      logger.info("Part %d read %d bytes" % (part_number, len(data)))
 
       rtn = fds_client.upload_part(bucket_name=upload_token.bucket_name,
                                    object_name=upload_token.object_name,
                                    upload_id=upload_token.upload_id,
                                    part_number=part_number,
-                                   data=byte_buffer[0:length])
+                                   data=data)
       upload_list.append(rtn)
       part_number += 1
 

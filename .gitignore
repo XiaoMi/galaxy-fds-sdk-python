@@ -1,13 +1,7 @@
-.build.info
-*.db
-*.svn*
-*.pyc
-.idea
-*~
-*.out
-*.log
-*.swp
-client/packages/
-build/env/
-build/download
-cli_log.txt
+# Python:
+*.py[cod]
+*.so
+*.egg
+*.egg-info
+dist
+build

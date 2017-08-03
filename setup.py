@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
   name='galaxy-fds-sdk',
-  version='1.2.14',
+  version='1.2.15',
   author='haxiaolin',
   author_email='haxiaolin@xiaomi.com',
   include_package_data=True,
