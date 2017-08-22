@@ -85,7 +85,7 @@ class GalaxyFDSClient(object):
     if secret_key is None and "XIAOMI_SECRET_KEY" in os.environ:
       secret_key = os.environ["XIAOMI_SECRET_KEY"]
     if secret_key is None:
-      self.load_config("xiaomi_secret_access_key")
+      secret_key = self.load_config("xiaomi_secret_access_key")
     return secret_key
 
   def load_config(self, config_key):
