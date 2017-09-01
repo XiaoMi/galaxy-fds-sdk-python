@@ -116,7 +116,7 @@ else:
 # Delete the bucket
 try:
   fds_client.delete_bucket(bucket_name)
-except GalaxyFDSClientException, e:
+except GalaxyFDSClientException as e:
   print e.message
 
 fds_client.delete_object(bucket_name, object_name)

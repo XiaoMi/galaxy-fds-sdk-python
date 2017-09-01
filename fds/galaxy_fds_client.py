@@ -763,7 +763,7 @@ class GalaxyFDSClient(object):
              (base_uri, quote(bucket_name), quote(object_name), \
               Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
               Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
-    except Exception, e:
+    except Exception as e:
       message = 'Wrong expiration given. ' \
                 'Milliseconds since January 1, 1970 should be used. ' + str(e)
       raise GalaxyFDSClientException(message)

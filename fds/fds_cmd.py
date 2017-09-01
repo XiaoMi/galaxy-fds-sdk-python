@@ -292,7 +292,7 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
                                          metadata=metadata,
                                          upload_part_result_list=json.dumps(upload_part_result))
     logger.info("Upload complete")
-  except Exception, e:
+  except Exception as e:
     try:
       logger.error("Upload id %s will be abort" % upload_token.upload_id)
       fds_client.abort_multipart_upload(bucket_name, object_name, upload_token.upload_id)
@@ -705,7 +705,7 @@ def main():
       else:
         parser.print_help()
 
-  except Exception, e:
+  except Exception as e:
     sys.stderr.write(e.message)
     sys.stderr.flush()
     if debug_enabled:
