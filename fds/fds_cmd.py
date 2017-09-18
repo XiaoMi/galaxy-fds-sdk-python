@@ -34,10 +34,12 @@ import argparse
 import sys
 from argcomplete.completers import ChoicesCompleter
 from datetime import datetime
+from time import sleep
 
 from fds import FDSClientConfiguration, GalaxyFDSClient
 from fds.model.fds_object_metadata import FDSObjectMetadata
 from fds.model.upload_part_result_list import UploadPartResultList
+from fds.galaxy_fds_client_exception import GalaxyFDSClientException
 
 logger = None
 access_key = None
@@ -49,9 +51,12 @@ enable_cdn = False
 end_point = None
 fds_client = None
 presigned_url = False
+force_delete = False
+
 expiration_in_hour = '1.0'
 multipart_upload_threshold_size = 50*1024*1024
 multipart_upload_buffer_size = 10*1024*1024
+max_upload_retry_time = 5
 
 
 def print_config(name, value):
@@ -80,7 +85,8 @@ def parse_argument(args):
   global method, bucket_name, region, object_name, \
     enable_cdn, enable_https, list_dir, list_objects, \
     data_file, data_dir, start_mark, metadata, length, offset, \
-    access_key, secret_key, end_point, presigned_url, expiration_in_hour
+    access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
+    force_delete
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -107,7 +113,12 @@ def parse_argument(args):
   print_config('object name', object_name)
   enable_cdn = args.CDN
   print_config('cdn enabled', enable_cdn)
-  enable_https = args.https
+
+  if type(args.https) == str:
+    enable_https = args.https.lower() == "true"
+  else:
+    enable_https = local_config.get("xiaomi_fds_https", True)
+
   print_config('https enabled', enable_https)
   list_dir = args.list_dir
   print_config('list dir', list_dir)
@@ -126,6 +137,10 @@ def parse_argument(args):
   offset = args.offset
   print_config('offset', offset)
   print_config('end point', end_point)
+
+  force_delete = args.force_delete
+  print_config('force', force_delete)
+
   if args.ak:
     access_key = args.ak
   else:
@@ -246,20 +261,27 @@ def put_object(data_file, bucket_name, object_name, metadata):
   fds_metadata = parse_metadata_from_str(metadata)
   # The object name doesn't have starting '/'
   object_name = object_name.lstrip('/')
+  result = None
   if data_file:
     with open(data_file, "rb") as f:
       flen = os.path.getsize(data_file)
       if flen < multipart_upload_threshold_size:
         logger.debug("Put object directly")
-        fds_client.put_object(bucket_name=bucket_name,
-                              object_name=object_name,
-                              data=f,
-                              metadata=fds_metadata)
+        result = fds_client.put_object(bucket_name=bucket_name,
+                                       object_name=object_name,
+                                       data=f,
+                                       metadata=fds_metadata)
+
       else:
-        multipart_upload(bucket_name, object_name, fds_metadata, f)
+        result = multipart_upload(bucket_name, object_name, fds_metadata, f)
   else:
-    multipart_upload(bucket_name, object_name, fds_metadata, sys.stdin)
+    result = multipart_upload(bucket_name, object_name, fds_metadata, sys.stdin)
   logger.debug("Upload object success")
+
+  if result:
+    logger.info('Put object %s success' % object_name)
+  else:
+    logger.info('Put object %s failed' % object_name)
 
 def multipart_upload(bucket_name, object_name, metadata, stream):
   upload_token = None
@@ -276,17 +298,28 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
         break
       logger.info("Part %d read %d bytes" % (part_number, len(data)))
 
-      rtn = fds_client.upload_part(bucket_name=upload_token.bucket_name,
-                                   object_name=upload_token.object_name,
-                                   upload_id=upload_token.upload_id,
-                                   part_number=part_number,
-                                   data=data)
-      upload_list.append(rtn)
+      rtn = None
+      for i in xrange(max_upload_retry_time):
+        try:
+          rtn = fds_client.upload_part(bucket_name=upload_token.bucket_name,
+                                       object_name=upload_token.object_name,
+                                       upload_id=upload_token.upload_id,
+                                       part_number=part_number,
+                                       data=data)
+          upload_list.append(rtn)
+          break
+        except:
+          sleepSeconds = (i+1)*5
+          logger.warning("upload part %d failed, retry after %d seconds" % (part_number, sleepSeconds))
+          sleep(sleepSeconds)
+
+      if not rtn:
+        raise GalaxyFDSClientException("Upload part %d failed" % part_number)
       part_number += 1
 
     upload_part_result = UploadPartResultList({"uploadPartResultList": upload_list})
     logger.info("Upload data end, result : %s" % json.dumps(upload_part_result))
-    fds_client.complete_multipart_upload(bucket_name=upload_token.bucket_name,
+    return fds_client.complete_multipart_upload(bucket_name=upload_token.bucket_name,
                                          object_name=upload_token.object_name,
                                          upload_id=upload_token.upload_id,
                                          metadata=metadata,
@@ -369,16 +402,31 @@ def delete_object(bucket_name, object_name):
   check_object_name(object_name=object_name)
   fds_client.delete_object(bucket_name=bucket_name,
                            object_name=object_name)
-
+  logger.info('delete object %s success' % (object_name))
 
 def delete_bucket(bucket_name):
-  fds_client.delete_bucket(bucket_name=bucket_name)
+  if fds_client.does_bucket_exist(bucket_name):
+    fds_client.delete_bucket(bucket_name=bucket_name)
+    logger.info('delete bucket success')
+  else:
+    logger.info('bucket does not exist')
 
+def delete_bucket_and_objects(bucket_name):
+  if fds_client.does_bucket_exist(bucket_name):
+    for obj in fds_client.list_all_objects(bucket_name, prefix="", delimiter=""):
+      fds_client.delete_object(bucket_name, obj.object_name)
+    fds_client.delete_bucket(bucket_name)
+    logger.info('delete bucket and objects success')
+  else:
+    logger.info('bucket does not exist')
 
 def head_object(bucket_name, object_name):
-  return fds_client.does_object_exists(bucket_name=bucket_name,
+  res = fds_client.does_object_exists(bucket_name=bucket_name,
                                        object_name=object_name)
-
+  if res:
+    logger.info('%s exists' % object_name)
+  else:
+    logger.info('%s does not exists' % object_name)
 
 def head_bucket(bucket_name):
   return fds_client.does_bucket_exist(bucket_name=bucket_name)
@@ -433,7 +481,6 @@ def list_object(bucket_name, object_name_prefix, start_mark=''):
   sys.stdout.flush()
   if list_result.is_truncated:
     sys.stdout.write('...\n')
-
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__,
@@ -597,6 +644,12 @@ def main():
                       dest='expiration_in_hour',
                       help='used with --presigned_url, set expiration of presigned url generated from now on(hour), default to one hour')
 
+  parser.add_argument('--force',
+                      action='store_true',
+                      dest='force_delete',
+                      default=False,
+                      help='If toggled, delete bucket and objects')
+
   argcomplete.autocomplete(parser)
 
   args = parser.parse_args()
@@ -629,6 +682,8 @@ def main():
   fds_client = GalaxyFDSClient(access_key=access_key,
                                access_secret=secret_key,
                                config=fds_config)
+
+  global force_delete
 
   try:
     if presigned_url:
@@ -691,6 +746,8 @@ def main():
         if object_name:
           delete_object(bucket_name=bucket_name,
                         object_name=object_name)
+        elif force_delete:
+          delete_bucket_and_objects(bucket_name=bucket_name)
         else:
           delete_bucket(bucket_name=bucket_name)
         pass
@@ -706,6 +763,7 @@ def main():
         parser.print_help()
 
   except Exception, e:
+    print e
     sys.stderr.write(e.message)
     sys.stderr.flush()
     if debug_enabled:
