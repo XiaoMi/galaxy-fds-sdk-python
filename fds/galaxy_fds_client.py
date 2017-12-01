@@ -28,6 +28,7 @@ from model.upload_part_result_list import UploadPartResultList
 import os
 import sys
 import utils
+import logging
 
 
 class GalaxyFDSClient(object):
@@ -66,6 +67,8 @@ class GalaxyFDSClient(object):
       endpoint = os.environ["FDS_ENDPOINT"]
     if endpoint is None:
       endpoint = self.load_config("xiaomi_fds_endpoint")
+    if endpoint is not None and len(endpoint.strip()) == 0:
+      logging.warn("endpoint is set to empty, please check ${XIAOMI_FDS_ENDPOINT} or ${FDS_ENDPOINT} in environ variables, or \"xiaomi_fds_endpoint\" in ~/.config/xiaomi/config")
     return endpoint
 
   def load_access_key(self):
@@ -76,6 +79,8 @@ class GalaxyFDSClient(object):
       access_key = os.environ["XIAOMI_ACCESS_KEY"]
     if access_key is None:
       access_key = self.load_config("xiaomi_access_key_id")
+    if access_key is not None and len(access_key.strip()) == 0:
+      logging.warn("access_key is set to empty, please check ${XIAOMI_ACCESS_KEY_ID} or ${XIAOMI_ACCESS_KEY} in environ variables, or \"xiaomi_access_key_id\" in ~/.config/xiaomi/config")
     return access_key
 
   def load_secret_key(self):
@@ -86,6 +91,8 @@ class GalaxyFDSClient(object):
       secret_key = os.environ["XIAOMI_SECRET_KEY"]
     if secret_key is None:
       secret_key = self.load_config("xiaomi_secret_access_key")
+    if secret_key is not None and len(secret_key.strip()) == 0:
+      logging.warn("secret_key is set to empty, please check ${XIAOMI_SECRET_ACCESS_KEY} or ${XIAOMI_SECRET_KEY} in environ variables, or \"xiaomi_secret_access_key\" in ~/.config/xiaomi/config")
     return secret_key
 
   def load_config(self, config_key):
@@ -460,7 +467,7 @@ class GalaxyFDSClient(object):
     :param bucket_name:     The name of the bucket
     :param object_name: The name of the object
     '''
-    uri = '%s%s/%srestore=' % (self._config.get_base_uri(),
+    uri = '%s%s/%s?restore=' % (self._config.get_base_uri(),
       bucket_name, object_name)
     response = self._request.put(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:

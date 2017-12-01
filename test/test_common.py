@@ -3,6 +3,7 @@
 region_name = ""
 access_key = ""
 access_secret = ""
+endpoint = None
 
 appid = ""
 acl_ak = ""

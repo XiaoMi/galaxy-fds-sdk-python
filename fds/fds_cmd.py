@@ -24,6 +24,7 @@ Usage Examples:
 \t[generate presigned url for download, expires in 30 min]\n\t\tfds -p -m get -b BUCKET_NAME -o OBJECT_NAME --expiration '0.5'
 \t\tYOUR_PRESIGNED_URL_GENRARTED
 \t\t[use presigned url to download object]\n\t\t\twget -v 'YOUR_PRESIGNED_URL_GENRARTED'
+\t[put bucket acl]\n\t\tfds -m put -b BUCKET_NAME --gratee AUTHENTICATED_USERS --permission READ
 """
 import json
 import logging
@@ -40,6 +41,12 @@ from fds import FDSClientConfiguration, GalaxyFDSClient
 from fds.model.fds_object_metadata import FDSObjectMetadata
 from fds.model.upload_part_result_list import UploadPartResultList
 from fds.galaxy_fds_client_exception import GalaxyFDSClientException
+from fds.model.permission import Permission
+from fds.model.permission import AccessControlList
+from fds.model.permission import Grant
+from fds.model.permission import Grantee
+from fds.model.permission import UserGroups
+from fds.model.permission import GrantType
 
 logger = None
 access_key = None
@@ -52,6 +59,8 @@ end_point = None
 fds_client = None
 presigned_url = False
 force_delete = False
+gratee = None
+permission = None
 
 expiration_in_hour = '1.0'
 multipart_upload_threshold_size = 50*1024*1024
@@ -86,7 +95,7 @@ def parse_argument(args):
     enable_cdn, enable_https, list_dir, list_objects, \
     data_file, data_dir, start_mark, metadata, length, offset, \
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
-    force_delete
+    force_delete, gratee, permission
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -172,6 +181,11 @@ def parse_argument(args):
   print_config('presigned url', presigned_url)
   expiration_in_hour = args.expiration_in_hour
   print_config('expiration in hour', expiration_in_hour)
+  gratee = args.gratee
+  print_config('gratee', gratee)
+  permission = args.permission
+  print_config('permission', permission)
+
 
 
 def get_buckets(fds_client):
@@ -396,6 +410,15 @@ def get_bucket_acl(bucket_name):
   for i in acl.get_grant_list():
     sys.stdout.write(str(i.grantee['id']) + '\t' + str(i.type) + '\t' + str(i.permission.to_string()) + '\n')
 
+def put_bucket_acl(bucket_name, gratee_list, permission_list):
+  check_bucket_name(bucket_name=bucket_name)
+  bucketAcl = AccessControlList()
+  for role in gratee_list:
+    grant = Grant(Grantee(role), Permission(permission).get_value())
+    if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
+      grant.type = GrantType.GROUP
+    bucketAcl.add_grant(grant)
+  fds_client.set_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
 
 def delete_object(bucket_name, object_name):
   check_bucket_name(bucket_name=bucket_name)
@@ -650,6 +673,19 @@ def main():
                       default=False,
                       help='If toggled, delete bucket and objects')
 
+  group = parser.add_argument_group('acl')
+  group.add_argument('--gratee',
+                      nargs='+',
+                      metavar='user, group, ALL_USERS, AUTHENTICATED_USERS',
+                      dest='gratee',
+                      help='Add acl to bucket')
+  group.add_argument('--permission',
+                      nargs='?',
+                      metavar="READ, WRITE, READ_OBJECTS, FULL_CONTROL",
+                      dest='permission',
+                      choices=['READ', 'WRITE', 'READ_OBJECTS', 'FULL_CONTROL'],
+                      help='Add acl to bucket')
+
   argcomplete.autocomplete(parser)
 
   args = parser.parse_args()
@@ -723,6 +759,8 @@ def main():
                        bucket_name=bucket_name,
                        object_name=object_name,
                        metadata=metadata)
+        elif gratee and permission:
+          put_bucket_acl(bucket_name, gratee, permission)
         else:
           put_bucket(bucket_name)
         pass

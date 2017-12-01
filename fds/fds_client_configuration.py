@@ -15,7 +15,8 @@ class FDSClientConfiguration(object):
       enable_cdn_for_upload = False,
       enable_https = True,
       timeout = 30,
-      max_retries = 3):
+      max_retries = 3,
+      endpoint=None):
     """
     :param region_name:
     :param enable_cdn_for_download:
@@ -32,7 +33,7 @@ class FDSClientConfiguration(object):
     self._timeout = timeout
     self._max_retries = max_retries
     self._debug = False
-    self._endpoint = ''
+    self._endpoint = endpoint
 
   @property
   def debug(self):
@@ -88,7 +89,7 @@ class FDSClientConfiguration(object):
     region = self._region_name
     if not region:
       region = "cnbj0"
-    if self._endpoint:
+    if self._endpoint is not None:
       base_uri += self._endpoint
     elif enable_cdn:
       base_uri += self.URI_CDN + '.' + region + '.' + self.URI_CDN_SUFFIX

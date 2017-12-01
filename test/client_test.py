@@ -6,6 +6,8 @@ import hashlib
 
 import sys
 sys.path.append('../')
+import os
+from os.path import expanduser
 
 from fds.auth import Common
 from fds.galaxy_fds_client import GalaxyFDSClient
@@ -25,7 +27,13 @@ from datetime import datetime
 class ClientTest(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
-    config = FDSClientConfiguration(region_name, False, False, False)
+    cls.init_from_local_config()
+    config = FDSClientConfiguration(
+      region_name=region_name,
+      enable_https=False,
+      enable_cdn_for_upload=False,
+      enable_cdn_for_download=False,
+      endpoint=endpoint)
     config.enable_md5_calculate = True
     cls.client = GalaxyFDSClient(access_key, access_secret, config)
     cls.bucket_name = 'test-python-' + datetime.strftime(datetime.now(), "%Y%m%d%H%M%S%z")
@@ -42,6 +50,24 @@ class ClientTest(unittest.TestCase):
       for obj in client.list_all_objects(bucket_name):
         client.delete_object(bucket_name, obj.object_name)
       client.delete_bucket(bucket_name)
+
+  @staticmethod
+  def init_from_local_config():
+    global access_key, access_secret, endpoint
+    if type(access_key) == str and access_key.strip() != "":
+      return
+    config_dirs = [os.path.join(expanduser("~"), ".config", "xiaomi", "config"),
+      os.path.join(expanduser("~"), ".config", "fds", "client.config")];
+    config = {}
+    for config_dir in config_dirs:
+      if not os.path.exists(config_dir):
+        pass
+      else:
+        with open(config_dir) as f:
+          config = json.load(fp=f)
+    access_key = config.get("xiaomi_access_key_id", "")
+    access_secret = config.get("xiaomi_secret_access_key", "")
+    endpoint = config.get("xiaomi_fds_endpoint", "")
 
   def test_set_endpoint(self):
     httpConfig = FDSClientConfiguration(region_name, False, False, False)
