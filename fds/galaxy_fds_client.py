@@ -1,35 +1,39 @@
 import json
 import hashlib
-from urllib import quote
+from sys import version_info
+IS_PY3 = version_info[0] >= 3
+
+if IS_PY3:
+  from urllib.parse import quote
+else:
+  from urllib import quote
 
 import requests
 
-from auth.common import Common
-from auth.signature.signer import Signer
-from fds_client_configuration import FDSClientConfiguration
-from fds_request import FDSRequest
-from galaxy_fds_client_exception import GalaxyFDSClientException
-from model.access_control_policy import AccessControlPolicy
-from model.fds_bucket import FDSBucket
-from model.fds_object import FDSObject
-from model.fds_object_listing import FDSObjectListing
-from model.fds_object_metadata import FDSObjectMetadata
-from model.fds_object_summary import FDSObjectSummary
-from model.permission import AccessControlList, UserGroups, Permission, \
+from fds.auth.common import Common
+from fds.auth.signature.signer import Signer
+from fds.fds_client_configuration import FDSClientConfiguration
+from fds.fds_request import FDSRequest
+from fds.galaxy_fds_client_exception import GalaxyFDSClientException
+from fds.model.access_control_policy import AccessControlPolicy
+from fds.model.fds_bucket import FDSBucket
+from fds.model.fds_object import FDSObject
+from fds.model.fds_object_listing import FDSObjectListing
+from fds.model.fds_object_metadata import FDSObjectMetadata
+from fds.model.fds_object_summary import FDSObjectSummary
+from fds.model.permission import AccessControlList, UserGroups, Permission, \
   GrantType
-from model.permission import Grant
-from model.permission import Grantee
-from model.permission import Owner
-from model.put_object_result import PutObjectResult
-from model.subresource import SubResource
-from model.init_multipart_upload_result import InitMultipartUploadResult
-from model.upload_part_result import UploadPartResult
-from model.upload_part_result_list import UploadPartResultList
+from fds.model.permission import Grant
+from fds.model.permission import Grantee
+from fds.model.permission import Owner
+from fds.model.put_object_result import PutObjectResult
+from fds.model.subresource import SubResource
+from fds.model.init_multipart_upload_result import InitMultipartUploadResult
+from fds.model.upload_part_result import UploadPartResult
 import os
 import sys
-import utils
+from .utils import uri_to_bucket_and_object, to_json_object
 import logging
-
 
 class GalaxyFDSClient(object):
   '''
@@ -146,7 +150,7 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException(message)
     elif response.content:
       buckets_list = []
-      json_response = json.loads(response.content)
+      json_response = to_json_object(response.content)
       buckets = json_response['buckets']
       owner = Owner().from_json(json_response['owner'])
       for bucket in buckets:
@@ -171,7 +175,7 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException(message)
     elif response.content:
       buckets_list = []
-      json_response = json.loads(response.content)
+      json_response = to_json_object(response.content)
       buckets = json_response['buckets']
       for bucket in buckets:
         buckets_list.append(FDSBucket(bucket['name'], ''))
@@ -227,7 +231,7 @@ class GalaxyFDSClient(object):
         (self._config.get_base_uri(), bucket_name, prefix, delimiter)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
-      objects_list = FDSObjectListing(json.loads(response.content))
+      objects_list = FDSObjectListing(to_json_object(response.content))
       return objects_list
     else:
       headers = ""
@@ -264,7 +268,7 @@ class GalaxyFDSClient(object):
         (self._config.get_base_uri(), bucket_name, prefix, delimiter, marker)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
-      objects_list = FDSObjectListing(json.loads(response.content))
+      objects_list = FDSObjectListing(to_json_object(response.content))
       return objects_list
     else:
       headers = ""
@@ -284,7 +288,7 @@ class GalaxyFDSClient(object):
     :param metadata:    The metadata of the object
     :return: The result of putting action server returns
     '''
-    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    bucket_name, object_name = uri_to_bucket_and_object(uri)
     self.put_object(bucket_name, object_name, data, metadata)
 
   def put_object(self, bucket_name, object_name, data, metadata=None):
@@ -303,13 +307,15 @@ class GalaxyFDSClient(object):
       metadata = FDSObjectMetadata()
     if self._config.enable_md5_calculate:
       digest = hashlib.md5()
+      if IS_PY3:
+        data = data.encode(encoding="UTF-8")
       digest.update(data)
       metadata.add_header(Common.CONTENT_MD5,digest.hexdigest())
 
     response = self._request.put(uri, data=data, auth=self._auth,
         headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
-      return PutObjectResult(json.loads(response.content))
+      return PutObjectResult(to_json_object(response.content))
     headers = ""
     if self._config.debug:
       headers = ' header=%s' % response.headers
@@ -337,7 +343,7 @@ class GalaxyFDSClient(object):
     response = self._request.post(uri, data=data, auth=self._auth,
         headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
-      return PutObjectResult(json.loads(response.content))
+      return PutObjectResult(to_json_object(response.content))
     headers = ""
     if self._config.debug:
       headers = ' header=%s' % response.headers
@@ -353,7 +359,7 @@ class GalaxyFDSClient(object):
     :param size:        The maximum size of each piece when return streaming is on
     :return:            The FDS object
     '''
-    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    bucket_name, object_name = uri_to_bucket_and_object(uri)
     return self.get_object(bucket_name, object_name, position, size)
 
   def get_object(self, bucket_name, object_name, position=0, size=4096, stream=None):
@@ -395,7 +401,7 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException(message)
 
   def download_object_with_uri(self, uri, data_file, offset=0, length=-1):
-    bucket_name, object_name = utils.uri_to_bucket_and_object(uri)
+    bucket_name, object_name = uri_to_bucket_and_object(uri)
     self.download_object(bucket_name, object_name, data_file, offset, length)
 
   def download_object(self, bucket_name, object_name, data_file, offset=0, length=-1):
@@ -404,7 +410,7 @@ class GalaxyFDSClient(object):
                                  position=offset)
     length_left = length
     if length_left == -1:
-        length_left = sys.maxint
+        length_left = IS_PY3 and sys.maxsize or sys.maxint
     try:
         if data_file:
             with open(data_file, "w") as f:
@@ -525,7 +531,7 @@ class GalaxyFDSClient(object):
       SubResource.ACL)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
-      acp = AccessControlPolicy(json.loads(response.content))
+      acp = AccessControlPolicy(to_json_object(response.content))
       acl = self._acp_to_acl(acp)
       return acl
     else:
@@ -567,7 +573,7 @@ class GalaxyFDSClient(object):
       self._config.get_base_uri(), bucket_name, object_name, SubResource.ACL)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
-      acp = AccessControlPolicy(json.loads(response.content))
+      acp = AccessControlPolicy(to_json_object(response.content))
       acl = self._acp_to_acl(acp)
       return acl
     else:
@@ -654,7 +660,7 @@ class GalaxyFDSClient(object):
       self._config.get_base_uri(), bucket_name, object_name, "uploads")
     response = self._request.put(uri, auth=self._auth, data="")
     if response.status_code == requests.codes.ok:
-      result = InitMultipartUploadResult(json.loads(response.content))
+      result = InitMultipartUploadResult(to_json_object(response.content))
       return result
     else:
       headers = ""
@@ -679,7 +685,7 @@ class GalaxyFDSClient(object):
         upload_id, "&partNumber=" + str(part_number))
     response = self._request.put(uri, auth=self._auth, data=data)
     if response.status_code == requests.codes.ok:
-      result = UploadPartResult(json.loads(response.content))
+      result = UploadPartResult(to_json_object(response.content))
       return result
     else:
       headers = ""
@@ -708,7 +714,7 @@ class GalaxyFDSClient(object):
     response = self._request.put(uri, auth=self._auth,
       data=upload_part_result_list, headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
-      result = PutObjectResult(json.loads(response.content))
+      result = PutObjectResult(to_json_object(response.content))
       return result
     else:
       headers = ""
@@ -770,7 +776,7 @@ class GalaxyFDSClient(object):
              (base_uri, quote(bucket_name), quote(object_name), \
               Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
               Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
-    except Exception, e:
+    except Exception as e:
       message = 'Wrong expiration given. ' \
                 'Milliseconds since January 1, 1970 should be used. ' + str(e)
       raise GalaxyFDSClientException(message)
@@ -802,7 +808,7 @@ class GalaxyFDSClient(object):
     Translate AccessControlList to AccessControlPolicy.
     '''
     if acl is not None:
-      acp = AccessControlPolicy(None)
+      acp = AccessControlPolicy(dict())
       owner = Owner()
       owner.id = self._access_key
       acp.owner = owner

@@ -26,6 +26,7 @@ Usage Examples:
 \t\t[use presigned url to download object]\n\t\t\twget -v 'YOUR_PRESIGNED_URL_GENRARTED'
 \t[put bucket acl]\n\t\tfds -m put -b BUCKET_NAME --gratee AUTHENTICATED_USERS --permission READ
 """
+from __future__ import print_function
 import json
 import logging
 import os
@@ -33,6 +34,7 @@ from os.path import expanduser
 import argcomplete
 import argparse
 import sys
+import traceback
 from argcomplete.completers import ChoicesCompleter
 from datetime import datetime
 from time import sleep
@@ -47,6 +49,14 @@ from fds.model.permission import Grant
 from fds.model.permission import Grantee
 from fds.model.permission import UserGroups
 from fds.model.permission import GrantType
+
+from sys import version_info
+IS_PY3 = version_info[0] >= 3
+
+if IS_PY3:
+  from urllib.parse import quote
+else:
+  from urllib import quote
 
 logger = None
 access_key = None
@@ -203,7 +213,7 @@ def get_buckets(fds_client):
 def list_buckets(fds_client, prefix, start_mark):
   buckets = get_buckets(fds_client)
   for i in buckets:
-    if i.bucket_name.startswith(prefix) and i.bucket_name >= start_mark:
+    if i.bucket_name.startswith(prefix) and (not start_mark or i.bucket_name >= start_mark):
       sys.stdout.write(i.bucket_name + '/')
       sys.stdout.write('\n')
 
@@ -313,7 +323,7 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
       logger.info("Part %d read %d bytes" % (part_number, len(data)))
 
       rtn = None
-      for i in xrange(max_upload_retry_time):
+      for i in range(max_upload_retry_time):
         try:
           rtn = fds_client.upload_part(bucket_name=upload_token.bucket_name,
                                        object_name=upload_token.object_name,
@@ -339,7 +349,7 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
                                          metadata=metadata,
                                          upload_part_result_list=json.dumps(upload_part_result))
     logger.info("Upload complete")
-  except Exception, e:
+  except Exception as e:
     try:
       logger.error("Upload id %s will be abort" % upload_token.upload_id)
       fds_client.abort_multipart_upload(bucket_name, object_name, upload_token.upload_id)
@@ -370,11 +380,13 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length):
                                      stream=True)
   length_left = length
   if length_left == -1:
-    length_left = sys.maxint
+    length_left = IS_PY3 and sys.maxsize or sys.maxint
   try:
     if data_file:
       with open(data_file, "w") as f:
         for chunk in fds_object.stream:
+          if isinstance(chunk, bytes):
+            chunk = chunk.decode(encoding='UTF-8')
           l = min(length_left, len(chunk));
           f.write(chunk[0:l])
           length_left -= l
@@ -382,6 +394,8 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length):
             break
     else:
       for chunk in fds_object.stream:
+        if isinstance(chunk, bytes):
+          chunk = chunk.decode(encoding='UTF-8')
         l = min(length_left, len(chunk))
         sys.stdout.write(chunk[0:l])
         length_left -= l
@@ -401,6 +415,7 @@ def post_object(data_file, bucket_name, metadata):
 def put_bucket(bucket_name):
   check_bucket_name(bucket_name=bucket_name)
   fds_client.create_bucket(bucket_name)
+  sys.stdout.write("Create bucket[%s] success" % bucket_name)
 
 
 def get_bucket_acl(bucket_name):
@@ -620,7 +635,7 @@ def main():
   parser.add_argument('--offset',
                       nargs='?',
                       metavar='offset',
-                      type=long,
+                      type=int,
                       const=0,
                       default=0,
                       dest='offset',
@@ -629,7 +644,7 @@ def main():
   parser.add_argument('--length',
                       nargs='?',
                       metavar='length',
-                      type=long,
+                      type=int,
                       dest='length',
                       const=-1,
                       default=-1,
@@ -733,7 +748,7 @@ def main():
                                               bucket_name=bucket_name, object_name=object_name,
                                               expiration=expiration, http_method=method.upper(),
                                               content_type=content_type)
-      print url
+      print(url)
     elif not (list_dir is None):
       if not (bucket_name is None):
         list_directory(bucket_name=bucket_name,
@@ -800,10 +815,15 @@ def main():
       else:
         parser.print_help()
 
-  except Exception, e:
-    print e
-    sys.stderr.write(e.message)
-    sys.stderr.flush()
+  except Exception as e:
+    print(e)
+    print("\n")
+
+    ex_type, ex, tb = sys.exc_info()
+    traceback.print_tb(tb)
+
+    # sys.stderr.write(str(e))
+    # sys.stderr.flush()
     if debug_enabled:
       logger.debug(e, exc_info=True)
     exit(1)

@@ -1,4 +1,4 @@
-from permission import Owner
+from .permission import Owner
 
 class FDSBucket(object):
   '''

@@ -1,3 +1,6 @@
+from sys import version_info
+IS_PY3 = version_info[0] >= 3
+
 class Permission(object):
   '''
   The Permission definition class.
@@ -38,7 +41,9 @@ class Permission(object):
   FULL_CONTROL = 0xff
 
   def __init__(self, value):
-    if isinstance(value, (str, unicode)):
+    types = IS_PY3 and (str) or (str, unicode)
+
+    if isinstance(value, types):
       value = value.strip().upper()
       if value == 'READ':
         self._value = Permission.READ

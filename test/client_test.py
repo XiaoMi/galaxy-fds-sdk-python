@@ -1,7 +1,16 @@
 #coding=utf-8
+from __future__ import print_function
 import unittest
 import time
-import urllib2
+
+from sys import version_info
+IS_PY3 = version_info[0] >= 3
+
+if IS_PY3:
+  from urllib.request import urlopen
+else:
+  from urllib2 import urlopen
+
 import hashlib
 
 import sys
@@ -21,13 +30,13 @@ from fds.model.permission import Grantee
 from fds.model.upload_part_result_list import UploadPartResultList
 import json
 
-from test_common import *
+from test.test_common import *
 from datetime import datetime
 
 class ClientTest(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
-    cls.init_from_local_config()
+    ClientTest.init_from_local_config()
     config = FDSClientConfiguration(
       region_name=region_name,
       enable_https=False,
@@ -35,14 +44,14 @@ class ClientTest(unittest.TestCase):
       enable_cdn_for_download=False,
       endpoint=endpoint)
     config.enable_md5_calculate = True
-    cls.client = GalaxyFDSClient(access_key, access_secret, config)
-    cls.bucket_name = 'test-python-' + datetime.strftime(datetime.now(), "%Y%m%d%H%M%S%z")
-    cls.delete_objects_and_bucket(cls.client, cls.bucket_name)
-    cls.client.create_bucket(cls.bucket_name)
+    ClientTest.client = GalaxyFDSClient(access_key, access_secret, config)
+    ClientTest.bucket_name = 'test-python-' + datetime.strftime(datetime.now(), "%Y%m%d%H%M%S%z")
+    ClientTest.delete_objects_and_bucket(cls.client, cls.bucket_name)
+    ClientTest.client.create_bucket(cls.bucket_name)
 
   @classmethod
   def tearDownClass(cls):
-    ClientTest.delete_objects_and_bucket(cls.client, cls.bucket_name)
+    ClientTest.delete_objects_and_bucket(ClientTest.client, ClientTest.bucket_name)
 
   @staticmethod
   def delete_objects_and_bucket(client, bucket_name):
@@ -91,7 +100,7 @@ class ClientTest(unittest.TestCase):
 
   def test_normal_bucket(self):
     for bucket in self.client.list_buckets():
-      print bucket
+      print(bucket)
     bucket_name = self.bucket_name + "2"
     self.assertFalse(self.client.does_bucket_exist(bucket_name))
     self.client.create_bucket(bucket_name)
@@ -100,12 +109,12 @@ class ClientTest(unittest.TestCase):
     self.assertFalse(self.client.does_bucket_exist(bucket_name))
 
   def test_create_and_delete_bucket(self):
-    print self.client.list_buckets()
+    print(self.client.list_buckets())
     bucket_name = self.bucket_name + "3"
     try:
       self.client.create_bucket(bucket_name)
     except GalaxyFDSClientException as e:
-      print e.message
+      print(e.message)
     self.delete_objects_and_bucket(self.client, bucket_name)
     self.client.create_bucket(bucket_name)
     self.assertEquals(True, self.client.does_bucket_exist(bucket_name))
@@ -114,20 +123,22 @@ class ClientTest(unittest.TestCase):
     try:
       self.client.delete_bucket(bucket_name)
     except GalaxyFDSClientException as e:
-      print e.message
+      print(e.message)
 
   def test_normal_object(self):
     object_name = "testPutGetObject_name"
     self.client.put_object(self.bucket_name, object_name, '')
     self.assertTrue(
       self.client.does_object_exists(self.bucket_name, object_name))
-    print self.client.list_objects(self.bucket_name)
+    print(self.client.list_objects(self.bucket_name))
     self.client.delete_object(self.bucket_name, object_name)
     self.assertFalse(
       self.client.does_object_exists(self.bucket_name, object_name))
-    print self.client.list_objects(self.bucket_name)
+    print(self.client.list_objects(self.bucket_name))
 
   def test_bucket_acl(self):
+    print(self.bucket_name)
+
     self.client.get_bucket_acl(self.bucket_name)
     bucketAcl = AccessControlList()
     bucketAcl.add_grant(Grant(Grantee("111"), Permission.READ))
@@ -158,7 +169,7 @@ class ClientTest(unittest.TestCase):
     acl = self.client.get_bucket_acl(self.bucket_name)
     self.assertTrue(bucketAcl.is_subset(acl))
     acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
-        FDSClientConfiguration(region_name, False, False, False))
+        FDSClientConfiguration(region_name, False, False, False, endpoint=endpoint))
     object_name = "testBucketAcl7"
     acl_client.put_object(self.bucket_name, object_name, "hahhah")
     self.assertTrue(
@@ -171,7 +182,7 @@ class ClientTest(unittest.TestCase):
     try:
       acl_client.delete_bucket(self.bucket_name)
     except GalaxyFDSClientException as e:
-      print e.message
+      print(e.message)
     self.assertTrue(self.client.does_bucket_exist(self.bucket_name))
 
   def test_object_acl(self):
@@ -179,8 +190,8 @@ class ClientTest(unittest.TestCase):
     content = "test1"
     self.client.put_object(self.bucket_name, object_name, content)
     for bucket in self.client.list_objects(self.bucket_name):
-      print bucket
-    print self.client.get_object_acl(self.bucket_name, object_name)
+      print(bucket)
+    print(self.client.get_object_acl(self.bucket_name, object_name))
     objectAcl = AccessControlList()
     objectAcl.add_grant(Grant(Grantee("111"), Permission.READ))
     objectAcl.add_grant(Grant(Grantee("109901"), Permission.FULL_CONTROL))
@@ -190,10 +201,10 @@ class ClientTest(unittest.TestCase):
     self.assertTrue(objectAcl.is_subset(acl))
 
     acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
-        FDSClientConfiguration(region_name, False, False, False))
+        FDSClientConfiguration(region_name, False, False, False, endpoint=endpoint))
     self.assertTrue(
         self.client.does_object_exists(self.bucket_name, object_name))
-    print acl_client.get_object(self.bucket_name, object_name)
+    print(acl_client.get_object(self.bucket_name, object_name))
     self.client.delete_object(self.bucket_name, object_name)
     self.assertFalse(
         self.client.does_object_exists(self.bucket_name, object_name))
@@ -203,12 +214,15 @@ class ClientTest(unittest.TestCase):
     content = "test1"
     self.client.put_object(self.bucket_name, object_name, content)
     whole_object = self.client.get_object(self.bucket_name, object_name)
-    self.assertEqual(whole_object.stream.next(), "test1")
+    self.assertEqual(whole_object.get_next_chunk_as_string(), "test1")
     partial_object = self.client.get_object(self.bucket_name, object_name, 2)
-    self.assertEqual(partial_object.stream.next(), "st1")
+    self.assertEqual(partial_object.get_next_chunk_as_string(), "st1")
     metadata = self.client.get_object_metadata(self.bucket_name, object_name)
-    self.assertEqual(hashlib.md5("test1").hexdigest(), metadata.metadata["content-md5"])
-    print metadata.metadata
+    if IS_PY3:
+      self.assertEqual(hashlib.md5("test1".encode("UTF-8")).hexdigest(), metadata.metadata["content-md5"])
+    else:
+      self.assertEqual(hashlib.md5("test1").hexdigest(), metadata.metadata["content-md5"])
+    print(metadata.metadata)
 
   def test_rename_object(self):
     object_old_name = "test_old1"
@@ -231,7 +245,9 @@ class ClientTest(unittest.TestCase):
     self.client.put_object(self.bucket_name, object_name, content)
     uri = self.client.generate_presigned_uri(None, self.bucket_name, object_name,
                                              time.time() * 1000 + 60000)
-    download = urllib2.urlopen(uri).read()
+    download = urlopen(uri).read()
+    if IS_PY3:
+      download = download.decode(encoding="UTF-8")
     self.assertEqual(content, download)
 
   def test_invalid_object_metadata(self):
@@ -256,7 +272,7 @@ class ClientTest(unittest.TestCase):
     test_content = ""
     obj_prefix = "obj_"
     # add 2000 objects to make sure the result is truncated
-    for i in xrange(2000):
+    for i in range(2000):
       self.client.put_object(self.bucket_name, obj_prefix+str(i), test_content)
     for obj in self.client.list_all_objects(self.bucket_name):
       self.client.delete_object(self.bucket_name, obj.object_name)
@@ -268,11 +284,11 @@ class ClientTest(unittest.TestCase):
     upload_list = []
     upload_token = self.client.init_multipart_upload(self.bucket_name, object_name)
 
-    for i in xrange(part_num):
+    for i in range(part_num):
       upload_list.append(self.client.upload_part(self.bucket_name, object_name, upload_token.upload_id, i+1, part_content))
 
     upload_part_result = UploadPartResultList({"uploadPartResultList": upload_list})
-    print json.dumps(upload_part_result)
+    print(json.dumps(upload_part_result))
     self.client.complete_multipart_upload(bucket_name=self.bucket_name,
                                           object_name=object_name,
                                           upload_id=upload_token.upload_id,
@@ -282,10 +298,12 @@ class ClientTest(unittest.TestCase):
     obj = self.client.get_object(self.bucket_name, object_name)
     length = 0
     for chunk in obj.stream:
+      if IS_PY3:
+        chunk = chunk.decode(encoding="UTF-8")
       length += len(chunk)
       for t in chunk:
         self.assertEqual(t, "1")
 
     obj.stream.close()
-    print length
+    print(length)
     self.assertEqual(length, part_num*5242880)

@@ -4,8 +4,13 @@ import hmac
 from email.utils import formatdate
 from hashlib import sha1
 from requests.auth import AuthBase
-from urllib import unquote
-from urlparse import urlparse
+from sys import version_info
+IS_PY3 = version_info[0] >= 3
+if IS_PY3:
+  from urllib.parse import unquote, urlparse
+else:
+  from urllib import unquote
+  from urlparse import urlparse
 
 from fds.auth.common import Common
 from fds.model.subresource import SubResource
@@ -40,6 +45,11 @@ class Signer(AuthBase):
     :return: The signed result, aka the signature
     '''
     string_to_sign = self._construct_string_to_sign(method, headers, url)
+    if IS_PY3:
+      if isinstance(app_secret, str):
+        app_secret = app_secret.encode(encoding='utf-8')
+      if isinstance(string_to_sign, str):
+        string_to_sign = string_to_sign.encode(encoding='utf-8')
     digest = hmac.new(app_secret, string_to_sign, digestmod=sha1)
     return digest.digest()
 
@@ -53,7 +63,10 @@ class Signer(AuthBase):
     :return: The signed result, aka the signature
     '''
     signature = self._sign(method, headers, url, app_secret)
-    return base64.encodestring(signature).strip()
+    if IS_PY3:
+      return base64.encodebytes(signature).decode(encoding='utf-8').strip()
+    else:
+      return base64.encodestring(signature).strip()
 
   def _construct_string_to_sign(self, http_method, http_headers, uri):
     '''
@@ -147,6 +160,6 @@ class Signer(AuthBase):
     for query in query_args:
       key = query.split('=')[0]
       if key == Common.EXPIRES:
-        return query.split('=')[1]
+        return int(query.split('=')[1])
     return 0
 
