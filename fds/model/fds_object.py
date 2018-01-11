@@ -15,8 +15,8 @@ class FDSObject(object):
     self.metadata = None
     self.stream = None
 
-  def get_next_chunk_as_string(self):
+  def get_next_chunk_as_string(self, encoding="UTF-8"):
     if IS_PY3:
-      return next(self.stream).decode(encoding="UTF-8")
+      return next(self.stream).decode(encoding=encoding)
     else:
       return self.stream.next()

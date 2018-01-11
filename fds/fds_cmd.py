@@ -383,10 +383,10 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length):
     length_left = IS_PY3 and sys.maxsize or sys.maxint
   try:
     if data_file:
-      with open(data_file, "w") as f:
+      with open(data_file, "wb") as f:
         for chunk in fds_object.stream:
-          if isinstance(chunk, bytes):
-            chunk = chunk.decode(encoding='UTF-8')
+          # if isinstance(chunk, bytes):
+          #   chunk = chunk.decode(encoding='UTF-8')
           l = min(length_left, len(chunk));
           f.write(chunk[0:l])
           length_left -= l
@@ -394,13 +394,17 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length):
             break
     else:
       for chunk in fds_object.stream:
-        if isinstance(chunk, bytes):
-          chunk = chunk.decode(encoding='UTF-8')
+        # if isinstance(chunk, bytes):
+        #   chunk = chunk.decode(encoding='UTF-8')
         l = min(length_left, len(chunk))
-        sys.stdout.write(chunk[0:l])
+        if IS_PY3:
+          sys.stdout.buffer.write(chunk[0:l])
+        else:
+          sys.stdout.write(chunk[0:l])
         length_left -= l
         if length_left <= 0:
           break
+      sys.stdout.flush()
   finally:
     fds_object.stream.close()
 
