@@ -5,6 +5,7 @@ IS_PY3 = version_info[0] >= 3
 
 if IS_PY3:
   from urllib.parse import quote
+  import io
 else:
   from urllib import quote
 
@@ -308,9 +309,19 @@ class GalaxyFDSClient(object):
     if self._config.enable_md5_calculate:
       digest = hashlib.md5()
       if IS_PY3:
-        data = data.encode(encoding="UTF-8")
-      digest.update(data)
-      metadata.add_header(Common.CONTENT_MD5,digest.hexdigest())
+        if isinstance(data, str):
+          data = data.encode(encoding="UTF-8")
+          digest.update(data)
+        elif data.seekable and data.seekable():
+          pos = data.tell()
+          digest.update(data.read())
+          data.seek(0, pos)
+        else:
+          raise GalaxyFDSClientException("Cannot digest data")
+      else:
+        digest.update(data)
+
+      metadata.add_header(Common.CONTENT_MD5, digest.hexdigest())
 
     response = self._request.put(uri, data=data, auth=self._auth,
         headers=metadata.metadata)
