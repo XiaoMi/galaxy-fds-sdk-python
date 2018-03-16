@@ -760,7 +760,7 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException(message)
 
   def generate_presigned_uri(self, base_uri, bucket_name, object_name,
-                             expiration, http_method = "GET", content_type = None):
+                             expiration, http_method = "GET", content_type = None, sub_resources = None):
     '''
     Generate a pre-signed uri to share object with the public
     :param base_uri: The base uri of rest server. Use client's default if 'None' pass
@@ -778,19 +778,32 @@ class GalaxyFDSClient(object):
       else:
         base_uri = self._config.get_download_base_uri()
     try:
-      uri = '%s%s/%s?%s=%s&%s=%s&' % \
-            (base_uri, bucket_name, object_name, \
-             Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
-             Common.EXPIRES, str(int(expiration)))
+      if sub_resources == None:
+        uri = '%s%s/%s?%s=%s&%s=%s&' % \
+              (base_uri, bucket_name, object_name, \
+               Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+               Common.EXPIRES, str(int(expiration)))
+      else:
+        uri = '%s%s/%s?%s&%s=%s&%s=%s&' % \
+             (base_uri, bucket_name, object_name, '&'.join(sub_resources), \
+              Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+              Common.EXPIRES, str(int(expiration)))
       headers = None
       if content_type != None and isinstance(content_type, basestring):
         headers = {Common.CONTENT_TYPE: content_type}
       signature = str(self._auth._sign_to_base64(http_method, headers, uri, \
                                                  self._auth._app_secret))
-      return '%s%s/%s?%s=%s&%s=%s&%s=%s' % \
-             (base_uri, quote(bucket_name), quote(object_name), \
-              Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
-              Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
+      if sub_resources == None:
+        return '%s%s/%s?%s=%s&%s=%s&%s=%s' % \
+               (base_uri, quote(bucket_name), quote(object_name), \
+                Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+                Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
+      else:
+        return '%s%s/%s?%s&%s=%s&%s=%s&%s=%s' % \
+              (base_uri, quote(bucket_name), quote(object_name), '&'.join(sub_resources), \
+               Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
+               Common.EXPIRES, str(int(expiration)), Common.SIGNATURE, signature)
+
     except Exception as e:
       message = 'Wrong expiration given. ' \
                 'Milliseconds since January 1, 1970 should be used. ' + str(e)
