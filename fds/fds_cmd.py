@@ -169,7 +169,8 @@ def parse_argument(args):
   disable_trash = args.disable_trash
   print_config('disable_trash', disable_trash)
 
-  object_prefix = args.object_prefix.strip()
+  object_prefix = args.object_prefix
+
   print_config('object_prefix', object_prefix)
 
   if args.ak:
