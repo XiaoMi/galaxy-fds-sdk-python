@@ -25,6 +25,10 @@ Usage Examples:
 \t\tYOUR_PRESIGNED_URL_GENRARTED
 \t\t[use presigned url to download object]\n\t\t\twget -v 'YOUR_PRESIGNED_URL_GENRARTED'
 \t[put bucket acl]\n\t\tfds -m put -b BUCKET_NAME --gratee AUTHENTICATED_USERS --permission READ
+\t[delete object]\n\t\tfds -m delete -b BUCKET_NAME -o OBJECT_NAME [--disable_trash]
+\t[delete objects]\n\t\tfds -m delete -b BUCKET_NAME --object_prefix=OBJECT_NAME_PREFIX [--disable_trash]
+\t[delete empty bucket]\n\t\tfds -m delete -b BUCKET_NAME
+\t[delete bucket with object]\n\t\tfds -m delete -b BUCKET_NAME --force
 """
 from __future__ import print_function
 import json
@@ -69,6 +73,8 @@ end_point = None
 fds_client = None
 presigned_url = False
 force_delete = False
+disable_trash = False
+object_prefix = None
 gratee = None
 permission = None
 
@@ -105,7 +111,7 @@ def parse_argument(args):
     enable_cdn, enable_https, list_dir, list_objects, \
     data_file, data_dir, start_mark, metadata, length, offset, \
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
-    force_delete, gratee, permission
+    force_delete, gratee, permission, disable_trash, object_prefix
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -159,6 +165,12 @@ def parse_argument(args):
 
   force_delete = args.force_delete
   print_config('force', force_delete)
+
+  disable_trash = args.disable_trash
+  print_config('disable_trash', disable_trash)
+
+  object_prefix = args.object_prefix.strip()
+  print_config('object_prefix', object_prefix)
 
   if args.ak:
     access_key = args.ak
@@ -439,12 +451,21 @@ def put_bucket_acl(bucket_name, gratee_list, permission_list):
     bucketAcl.add_grant(grant)
   fds_client.set_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
 
-def delete_object(bucket_name, object_name):
+def delete_object(bucket_name, object_name, **kwargs):
   check_bucket_name(bucket_name=bucket_name)
   check_object_name(object_name=object_name)
   fds_client.delete_object(bucket_name=bucket_name,
-                           object_name=object_name)
+                           object_name=object_name,
+                           **kwargs)
   logger.info('delete object %s success' % (object_name))
+
+def delete_objects(bucket_name, **kwargs):
+    check_bucket_name(bucket_name=bucket_name)
+    for obj in fds_client.list_all_objects(bucket_name, prefix=kwargs["object_prefix"], delimiter=""):
+        fds_client.delete_object(bucket_name=bucket_name,
+                                object_name=obj.object_name,
+                                **kwargs)
+        logger.info('delete object %s success' % (obj.object_name))
 
 def delete_bucket(bucket_name):
   if fds_client.does_bucket_exist(bucket_name):
@@ -692,6 +713,19 @@ def main():
                       default=False,
                       help='If toggled, delete bucket and objects')
 
+  parser.add_argument('--disable_trash',
+                      action='store_true',
+                      dest='disable_trash',
+                      default=False,
+                      help='If toggled, delete object without move to trash')
+
+  parser.add_argument('--object_prefix',
+                      nargs='?',
+                      metavar="object's prefix",
+                      type=str,
+                      dest='object_prefix',
+                      help="object's prefix")
+
   group = parser.add_argument_group('acl')
   group.add_argument('--gratee',
                       nargs='+',
@@ -739,6 +773,8 @@ def main():
                                config=fds_config)
 
   global force_delete
+  global disable_trash
+  global object_prefix
 
   try:
     if presigned_url:
@@ -802,7 +838,12 @@ def main():
       elif method == 'delete':
         if object_name:
           delete_object(bucket_name=bucket_name,
-                        object_name=object_name)
+                        object_name=object_name,
+                        enable_trash=not disable_trash)
+        elif object_prefix is not None:
+          delete_objects(bucket_name=bucket_name,
+                         object_prefix=object_prefix,
+                         enable_trash=not disable_trash)
         elif force_delete:
           delete_bucket_and_objects(bucket_name=bucket_name)
         else:

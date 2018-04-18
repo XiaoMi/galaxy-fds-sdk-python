@@ -466,13 +466,16 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def delete_object(self, bucket_name, object_name):
+  def delete_object(self, bucket_name, object_name, **kwargs):
     '''
     Delete specified object.
     :param bucket_name: The name of the bucket
     :param object_name: The name of the object
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
+    if "enable_trash" in kwargs and kwargs["enable_trash"] is False:
+      uri += "?enableTrash=false"
+
     response = self._request.delete(uri, auth=self._auth)
     if response.status_code != requests.codes.ok:
       headers = ""
