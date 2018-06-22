@@ -31,6 +31,7 @@ from fds.model.put_object_result import PutObjectResult
 from fds.model.subresource import SubResource
 from fds.model.init_multipart_upload_result import InitMultipartUploadResult
 from fds.model.upload_part_result import UploadPartResult
+from fds.model.fds_lifecycle import FDSLifecycleConfig
 import os
 import sys
 from .utils import uri_to_bucket_and_object, to_json_object
@@ -104,7 +105,7 @@ class GalaxyFDSClient(object):
     config_filename = os.path.join(os.path.expanduser('~'), ".config/xiaomi/config")
     if os.path.exists(config_filename):
       with open(config_filename) as f:
-        data = json.load(f)
+        data = to_json_object(f)
         return data[config_key]
 
   @property
@@ -215,7 +216,7 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def list_objects(self, bucket_name, prefix = '', delimiter = None):
+  def list_objects(self, bucket_name, prefix = '', delimiter = None, max_keys=None):
     '''
     List all objects in a specified bucket with prefix. If the number of objects
     in the bucket is larger than a threshold, you would get a FDSObjectListing
@@ -230,6 +231,8 @@ class GalaxyFDSClient(object):
       delimiter = self._delimiter
     uri = '%s%s?prefix=%s&delimiter=%s' % \
         (self._config.get_base_uri(), bucket_name, prefix, delimiter)
+    if max_keys is not None:
+      uri += "&maxKeys=" + str(max_keys)
     response = self._request.get(uri, auth=self._auth)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(to_json_object(response.content))
@@ -243,14 +246,14 @@ class GalaxyFDSClient(object):
           (bucket_name, prefix, response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def list_trash_objects(self, prefix = '', delimiter = None):
+  def list_trash_objects(self, prefix = '', delimiter=None, max_keys=None):
     '''
     Compared with list_objects, it returns a list of objects in the trash.
     :param prefix: The prefix of bucket_name/object_name.
     :param delimiter: The delimiter used in listing, using '/' if 'None' given.
     :return: FDSObjectListing contains a list of objects in the trash.
     '''
-    return self.list_objects("trash", prefix, delimiter);
+    return self.list_objects("trash", prefix, delimiter, max_keys=max_keys);
 
   def list_next_batch_of_objects(self, previous):
     '''
@@ -373,7 +376,7 @@ class GalaxyFDSClient(object):
     bucket_name, object_name = uri_to_bucket_and_object(uri)
     return self.get_object(bucket_name, object_name, position, size)
 
-  def get_object(self, bucket_name, object_name, position=0, size=4096, stream=None):
+  def get_object(self, bucket_name, object_name, position=0, size=4096, stream=None, version_id=None):
     '''
     Get a specified object from a bucket.
     :param bucket_name: The name of the bucket from whom to get the object
@@ -387,11 +390,15 @@ class GalaxyFDSClient(object):
       raise GalaxyFDSClientException("Seek position should be no less than 0")
     uri = '%s%s/%s' % (self._config.get_download_base_uri(), bucket_name,
       object_name)
+    req_params = dict()
+    if version_id:
+      req_params["versionId"] = version_id
+
     if position > 0:
       header = {Common.RANGE : 'bytes=%d-' % position}
-      response = self._request.get(uri, auth=self._auth, headers=header, stream=stream)
+      response = self._request.get(uri, auth=self._auth, headers=header, stream=stream, params=req_params)
     else:
-      response = self._request.get(uri, auth=self._auth, stream=stream)
+      response = self._request.get(uri, auth=self._auth, stream=stream, params=req_params)
     if response.status_code == requests.codes.ok or \
         response.status_code == requests.codes.partial:
       obj = FDSObject()
@@ -484,6 +491,31 @@ class GalaxyFDSClient(object):
       message = 'Delete object failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
+
+    if "object-version-id" in response.headers:
+      return response.headers["object-version-id"]
+    return None
+
+
+  def _delete_objects_(self, bucket_name, object_names):
+    '''
+    Delete specified objects in the bucket
+    :param bucket_name:
+    :param object_names:
+    :return:
+    '''
+    uri = "%s%s?deleteObjects" % (self._config.get_base_uri(), bucket_name)
+    response = self._request.put(uri, auth=self._auth, data=json.dumps(object_names))
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Restore object failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+    else:
+      failed_list = to_json_object(response.content)
+      return failed_list
 
   def restore_object(self, bucket_name, object_name):
     '''
@@ -792,7 +824,7 @@ class GalaxyFDSClient(object):
               Common.GALAXY_ACCESS_KEY_ID, self._auth._app_key, \
               Common.EXPIRES, str(int(expiration)))
       headers = None
-      if content_type != None and isinstance(content_type, basestring):
+      if content_type != None and isinstance(content_type, IS_PY3 and str or basestring):
         headers = {Common.CONTENT_TYPE: content_type}
       signature = str(self._auth._sign_to_base64(http_method, headers, uri, \
                                                  self._auth._app_secret))
@@ -877,3 +909,99 @@ class GalaxyFDSClient(object):
         result = self.list_next_batch_of_objects(result)
       else:
         break
+
+  def _update_bucket_versioning_(self, bucket_name, versioning):
+    '''
+    Update bucket versioning
+    :param bucket_name:
+    :param versioning:
+    :return:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    response = self._request.put(uri, auth=self._auth, params={"versioning": str(versioning)})
+    if response.status_code == requests.codes.ok:
+      return to_json_object(response.content)
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Update bucket versioning failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _get_bucket_versioning_(self, bucket_name):
+    '''
+    Get bucket versioning
+    :param bucket_name:
+    :param versioning:
+    :return:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    response = self._request.get(uri, auth=self._auth, params={"versioning": ""})
+    if response.status_code == requests.codes.ok:
+      content = response.content
+      if isinstance(content, bytes):
+        content = content.decode(encoding='utf-8')
+      return int(content)
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get bucket versioning failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _list_version_ids_(self, bucket_name, object_name):
+    '''
+    List all version ids of specified object order by timestamp desc
+    :param bucket_name:
+    :param object_name:
+    :return: a list of version ids of specified object
+    '''
+    uri = '%s%s/%s' % (self._config.get_base_uri(), bucket_name, object_name)
+    response = self._request.get(uri, auth=self._auth, params={"versionIds": ""})
+    if response.status_code == requests.codes.ok:
+      return to_json_object(response.content)
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get object version ids failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _update_lifecycle_config_(self, bucket_name, lifecycle_config):
+    '''
+    Update lifecycle config of a bucket which determine by the config
+    :param lifecycle_config:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    response = self._request.put(uri,
+      auth=self._auth,
+      params={"lifecycle": ""},
+      data=json.dumps(lifecycle_config))
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Update bucket lifecycle config failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _get_lifecycle_config_(self, bucket_name):
+    '''
+    Get lifecycle config of specified bucket
+    :param bucket_name:
+    :return:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    response = self._request.get(uri, auth=self._auth, params={"lifecycle": ""})
+    if response.status_code == requests.codes.ok:
+      return FDSLifecycleConfig(to_json_object(response.content))
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get bucket lifecycle config failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)

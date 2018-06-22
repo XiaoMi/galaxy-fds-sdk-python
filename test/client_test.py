@@ -28,6 +28,7 @@ from fds.model.permission import AccessControlList
 from fds.model.permission import Grant
 from fds.model.permission import Grantee
 from fds.model.upload_part_result_list import UploadPartResultList
+from fds.model.fds_lifecycle import *
 import json
 
 from test.test_common import *
@@ -56,7 +57,7 @@ class ClientTest(unittest.TestCase):
   @staticmethod
   def delete_objects_and_bucket(client, bucket_name):
     if client.does_bucket_exist(bucket_name):
-      for obj in client.list_all_objects(bucket_name):
+      for obj in client.list_all_objects(bucket_name, delimiter=""):
         client.delete_object(bucket_name, obj.object_name)
       client.delete_bucket(bucket_name)
 
@@ -307,3 +308,132 @@ class ClientTest(unittest.TestCase):
     obj.stream.close()
     print(length)
     self.assertEqual(length, part_num*5242880)
+
+  def test_delete_objects(self):
+    total_count = 100;
+    object_prefix = "delete-objs-";
+    object_names = [""]
+    for i in range(total_count):
+      object_name = object_prefix + str(i)
+      self.client.put_object(self.bucket_name, object_name, "")
+      object_names.append(object_name)
+
+    delete_result = self.client.delete_objects(self.bucket_name, object_names)
+    self.assertEqual(len(self.client.list_objects(self.bucket_name).objects), 0)
+
+  def test_list_trash(self):
+    print("")
+    total_count = 150;
+    object_prefix = "trash-obj-";
+    for i in range(total_count):
+      self.client.put_object(self.bucket_name, object_prefix + str(i), "")
+
+    self.client.delete_objects(self.bucket_name, [object_prefix + str(i) for i in range(total_count)])
+
+    list_result = self.client.list_trash_objects(self.bucket_name, "", max_keys=50)
+    sub_count1 = len(list_result.objects)
+    self.assertEqual(50, sub_count1)
+    print(list_result.next_marker)
+
+    list_result = self.client.list_next_batch_of_objects(list_result)
+    sub_count2 = len(list_result.objects)
+    self.assertEqual(sub_count1+sub_count2, total_count)
+
+  def test_restore(self):
+    print("")
+    self.client.put_object(self.bucket_name, "aa/aa-1", "123")
+    self.client.delete_object(self.bucket_name, "aa/aa-1")
+    flag = False
+    try:
+      self.client.get_object(self.bucket_name, "aa/aa-1").get_next_chunk_as_string()
+    except:
+      flag = True
+
+    self.assertTrue(flag)
+    self.client.restore_object(self.bucket_name, "aa/aa-1")
+    print(self.client.get_object(self.bucket_name, "aa/aa-1").get_next_chunk_as_string())
+
+  def test_versioning(self):
+    print("")
+    versionings = [2, 3, 6, 7, 8, 12, 2]
+    for v in versionings:
+      self.client._update_bucket_versioning_(self.bucket_name, v)
+      self.assertEqual(self.client._get_bucket_versioning_(self.bucket_name), v)
+
+  def test_get_version_ids(self):
+    print("")
+    count = 10
+    get_content = lambda i: "data-%d" % i
+
+    for i in range(count):
+      self.client.put_object(self.bucket_name, "obj", get_content(i))
+    vids = self.client._list_version_ids_(self.bucket_name, "obj")
+    self.assertEqual(len(vids), count-1)
+    for i, id in enumerate(reversed(vids)):
+      self.assertEqual(get_content(i), self.client.get_object(self.bucket_name, "obj", version_id=id).get_next_chunk_as_string())
+
+
+  def test_lifecycle_config(self):
+    print("")
+    actions = [
+      FDSNonCurrentVersionExpiration({"days": 0.01}),
+      FDSExpiration({"days": 0.01}),
+      FDSAbortIncompleteMultipartUpload({"days": 1}),
+    ]
+
+    rule1 = FDSLifecycleRule()
+    rule1.enabled = True
+    rule1.prefix = "image/"
+    rule1.update_action(actions[0])
+    rule1.update_action(actions[1])
+    rule1.update_action(actions[2])
+
+    rule2 = FDSLifecycleRule()
+    rule2.enabled = True
+    rule2.prefix = "image/tmp/"
+    rule2.update_action(FDSExpiration({"days": 0.00001}))
+    rule2.update_action(FDSNonCurrentVersionExpiration({"days": 0.00001}))
+
+    ttlconfig = FDSLifecycleConfig()
+    ttlconfig.bucket_name = self.bucket_name
+    ttlconfig.rules.append(rule1)
+    ttlconfig.rules.append(rule2)
+
+    self.client._update_lifecycle_config_(ttlconfig)
+    print(json.dumps(self.client._get_lifecycle_config_(self.bucket_name)))
+
+    ttlconfig = self.client._get_lifecycle_config_(self.bucket_name)
+    self.assertIsNotNone(ttlconfig.get_rule_by_prefix("image/tmp/"))
+    self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
+    ttlconfig.get_rule_by_prefix("image/tmp/").enabled = False
+    self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
+    self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
+    ttlconfig.get_rule_by_prefix("image/").enabled = False
+    self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
+    self.assertIsNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
+
+  def test_get_and_delete_version(self):
+    print("")
+    object_name = "test_get_and_delete_version"
+    get_content = lambda i: "data-%d" % i
+
+    result = self.client.put_object(self.bucket_name, object_name, get_content(0))
+    self.assertIsNone(result.previous_version_id)
+
+    count = 100
+    for i in range(1, count+1):
+      result = self.client.put_object(self.bucket_name, object_name, get_content(i))
+      previous_version_id = result.previous_version_id
+      self.assertIsNotNone(previous_version_id)
+      self.assertEqual(get_content(i-1),
+        self.client.get_object(self.bucket_name, object_name, version_id=previous_version_id).get_next_chunk_as_string())
+
+    vid = self.client.delete_object(self.bucket_name, object_name)
+    self.assertIsNotNone(vid)
+    self.assertEqual(get_content(count),
+      self.client.get_object(self.bucket_name, object_name, version_id=vid).get_next_chunk_as_string())
+    
+    vids = self.client._list_version_ids_(self.bucket_name, object_name)
+    # get No.98
+    self.assertEqual(get_content(98),
+      self.client.get_object(self.bucket_name, object_name, version_id=vids[2]).get_next_chunk_as_string())

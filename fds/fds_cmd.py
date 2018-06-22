@@ -53,6 +53,7 @@ from fds.model.permission import Grant
 from fds.model.permission import Grantee
 from fds.model.permission import UserGroups
 from fds.model.permission import GrantType
+from fds.model.fds_lifecycle import FDSLifecycleConfig
 
 from sys import version_info
 IS_PY3 = version_info[0] >= 3
@@ -77,6 +78,8 @@ disable_trash = False
 object_prefix = None
 gratee = None
 permission = None
+lifecycle = None
+recursive = False
 
 expiration_in_hour = '1.0'
 multipart_upload_threshold_size = 50*1024*1024
@@ -111,7 +114,8 @@ def parse_argument(args):
     enable_cdn, enable_https, list_dir, list_objects, \
     data_file, data_dir, start_mark, metadata, length, offset, \
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
-    force_delete, gratee, permission, disable_trash, object_prefix
+    force_delete, gratee, permission, disable_trash, object_prefix, lifecycle, \
+    recursive
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -208,8 +212,10 @@ def parse_argument(args):
   print_config('gratee', gratee)
   permission = args.permission
   print_config('permission', permission)
-
-
+  lifecycle = args.lifecycle
+  print_config('lifecycle', lifecycle)
+  recursive = args.recursive
+  print_config('recursive', recursive)
 
 def get_buckets(fds_client):
   buckets = fds_client.list_buckets()
@@ -428,6 +434,37 @@ def post_object(data_file, bucket_name, metadata):
     logger.debug('Post object [' + fds_object.object_name + ']')
     sys.stdout.write(fds_object.object_name)
 
+def download_directory(bucket_name, data_dir, recursive):
+  def mkdirs(path):
+    if not os.path.isdir(path):
+      os.makedirs(path)
+
+  delimiter = not recursive and '/' or ''
+  if not data_dir.endswith('/'):
+    data_dir += '/'
+  if data_dir == '/': # download all objects under bucket
+    objects_list = fds_client.list_objects(bucket_name, prefix='', delimiter=delimiter)
+  else:
+    objects_list = fds_client.list_objects(bucket_name, prefix=data_dir, delimiter=delimiter)
+  # print(objects_list.objects)
+  while True:
+    for obj in objects_list.objects:
+      if obj.object_name.endswith('/'):
+        mkdirs(obj.object_name)
+      else:
+        if '/' in obj.object_name:
+          mkdirs(obj.object_name[:obj.object_name.rfind('/')])
+        get_object(obj.object_name, bucket_name, obj.object_name, None, 0, -1)
+        logger.debug("Download [%s/%s] success" % (bucket_name, obj.object_name))
+    for prefix in objects_list.common_prefixes:
+      mkdirs(prefix)
+    if objects_list.is_truncated:
+      objects_list = fds_client.list_next_batch_of_objects(objects_list)
+    else:
+      break
+
+  sys.stdout.write("Downdoad directory[%s] success" % data_dir)
+  sys.stdout.flush()
 
 def put_bucket(bucket_name):
   check_bucket_name(bucket_name=bucket_name)
@@ -451,6 +488,30 @@ def put_bucket_acl(bucket_name, gratee_list, permission_list):
       grant.type = GrantType.GROUP
     bucketAcl.add_grant(grant)
   fds_client.set_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
+
+def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
+  check_bucket_name(bucket_name=bucket_name)
+  check_object_name(object_name=object_name)
+  object_acl = AccessControlList()
+  for role in gratee_list:
+    grant = Grant(Grantee(role), Permission(permission).get_value())
+    if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
+      grant.type = GrantType.GROUP
+    object_acl.add_grant(grant)
+  fds_client.set_object_acl(bucket_name, object_name, object_acl)
+  logger.info('set [%s/%s] acl success', bucket_name, object_name)
+
+def put_bucket_lifecycle_config(bucket_name, lifecycle):
+  check_bucket_name(bucket_name)
+  lifecycle = FDSLifecycleConfig(json.loads(lifecycle))
+  fds_client._update_lifecycle_config_(bucket_name, lifecycle)
+  sys.stdout.write("put [%s] lifecycle config success" % bucket_name)
+  sys.stdout.flush()
+
+def get_bucket_lifecycle_config(bucket_name):
+  lifecycle = fds_client._get_lifecycle_config_(bucket_name);
+  sys.stdout.write(json.dumps(lifecycle))
+  sys.stdout.flush()
 
 def delete_object(bucket_name, object_name, **kwargs):
   check_bucket_name(bucket_name=bucket_name)
@@ -545,6 +606,11 @@ def list_object(bucket_name, object_name_prefix, start_mark=''):
   sys.stdout.flush()
   if list_result.is_truncated:
     sys.stdout.write('...\n')
+
+def list_version_ids(bucket_name, object_name):
+  vids = fds_client._list_version_ids_(bucket_name, object_name)
+  sys.stdout.write(json.dumps(vids))
+  sys.stdout.flush()
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__,
@@ -656,7 +722,13 @@ def main():
                       nargs='?',
                       metavar='data dir',
                       dest='data_dir',
-                      help='directory to be uploaded or stored')
+                      help="Directory to be uploaded or stored. Use '/' to download all objects under the bucket")
+
+  parser.add_argument('-R', '--recursive',
+                      action='store_true',
+                      dest='recursive',
+                      default=False,
+                      help='If toggled, download the directory recursively')
 
   parser.add_argument('--offset',
                       nargs='?',
@@ -727,6 +799,14 @@ def main():
                       dest='object_prefix',
                       help="object's prefix")
 
+  parser.add_argument('--lifecycle',
+                       nargs='?',
+                       metavar='lifecycle config, json format',
+                       dest='lifecycle',
+                       const=True,
+                       default=None,
+                       help='''Put or get lifecycle configof the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
+
   group = parser.add_argument_group('acl')
   group.add_argument('--gratee',
                       nargs='+',
@@ -776,6 +856,7 @@ def main():
   global force_delete
   global disable_trash
   global object_prefix
+  global recursive
 
   try:
     if presigned_url:
@@ -798,7 +879,10 @@ def main():
         list_buckets(fds_client=fds_client, prefix=list_dir, start_mark=start_mark)
     elif not (list_objects is None):
       if not (bucket_name is None):
-        list_object(bucket_name=bucket_name, object_name_prefix=list_objects, start_mark=start_mark)
+        if object_name is not None:
+          list_version_ids(bucket_name=bucket_name, object_name=object_name)
+        else:
+          list_object(bucket_name=bucket_name, object_name_prefix=list_objects, start_mark=start_mark)
       else:
         list_buckets(fds_client=fds_client, prefix=list_objects, start_mark=start_mark)
       pass
@@ -810,6 +894,8 @@ def main():
                           bucket_name=bucket_name,
                           object_name_prefix=object_name,
                           metadata=metadata)
+          elif gratee and permission:
+            put_object_acl(bucket_name, object_name, gratee, permission)
           else:
             put_object(data_file=data_file,
                        bucket_name=bucket_name,
@@ -817,17 +903,23 @@ def main():
                        metadata=metadata)
         elif gratee and permission:
           put_bucket_acl(bucket_name, gratee, permission)
+        elif lifecycle:
+          put_bucket_lifecycle_config(bucket_name, lifecycle)
         else:
           put_bucket(bucket_name)
         pass
       elif method == 'get':
-        if object_name:
+        if data_dir:
+          download_directory(bucket_name=bucket_name, data_dir=data_dir, recursive=recursive)
+        elif object_name:
           get_object(data_file=data_file,
                      bucket_name=bucket_name,
                      object_name=object_name,
                      metadata=metadata,
                      offset=offset,
                      length=length)
+        elif lifecycle:
+          get_bucket_lifecycle_config(bucket_name)
         else:
           get_bucket_acl(bucket_name=bucket_name)
         pass
@@ -877,3 +969,4 @@ def main():
 
 if __name__ == "__main__":
   main()
+

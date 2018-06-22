@@ -18,6 +18,7 @@ class Common(object):
   CONTENT_ENCODING = "content-encoding"
   CONTENT_LENGTH = "content-length"
   LAST_MODIFIED = "last-modified"
+  UPLOAD_TIME = "upload-time"
 
   DEFAULT_FDS_SERVICE_BASE_URI = "http://files.fds.api.xiaomi.com/"
   DEFAULT_CDN_SERVICE_URI = "http://cdn.fds.api.xiaomi.com/"

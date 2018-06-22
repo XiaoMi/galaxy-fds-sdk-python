@@ -13,7 +13,8 @@ class FDSObjectMetadata(object):
     Common.CONTENT_ENCODING,
     Common.CONTENT_LENGTH,
     Common.CONTENT_MD5,
-    Common.CONTENT_TYPE
+    Common.CONTENT_TYPE,
+    Common.UPLOAD_TIME
   ]
 
   def __init__(self):
