@@ -29,6 +29,9 @@ Usage Examples:
 \t[delete objects]\n\t\tfds -m delete -b BUCKET_NAME --object_prefix=OBJECT_NAME_PREFIX [--disable_trash]
 \t[delete empty bucket]\n\t\tfds -m delete -b BUCKET_NAME
 \t[delete bucket with object]\n\t\tfds -m delete -b BUCKET_NAME --force
+\t[download object]\n\t\tfds -m get -b BUCKET_NAME -o OBJECT_NAME -d OUTPUT_FILE_NAME
+\t[download directory(object preifx) recursively]\n\t\tfds -m get -b BUCKET_NAME --P OBJECT_PREFIX -D OUTPUT_DIRECTORY -R
+\t[download all objects under a bucket]\n\t\tfds -m get -b BUCKET_NAME -P / -D OUTPUT_DIRECTORY -R
 """
 from __future__ import print_function
 import json
@@ -85,7 +88,6 @@ expiration_in_hour = '1.0'
 multipart_upload_threshold_size = 50*1024*1024
 multipart_upload_buffer_size = 10*1024*1024
 max_upload_retry_time = 5
-
 
 def print_config(name, value):
   global logger
@@ -434,36 +436,46 @@ def post_object(data_file, bucket_name, metadata):
     logger.debug('Post object [' + fds_object.object_name + ']')
     sys.stdout.write(fds_object.object_name)
 
-def download_directory(bucket_name, data_dir, recursive):
+def download_directory(bucket_name, object_prefix, data_dir, recursive):
   def mkdirs(path):
     if not os.path.isdir(path):
       os.makedirs(path)
 
   delimiter = not recursive and '/' or ''
+
+  if not object_prefix.endswith('/'):
+    sys.stderr.write('Object prefix must endswith /')
+    sys.stderr.flush()
+    return
+
+  if not data_dir:
+    data_dir = './'
+
   if not data_dir.endswith('/'):
     data_dir += '/'
-  if data_dir == '/': # download all objects under bucket
+
+  if object_prefix == '/': # download all objects under bucket
     objects_list = fds_client.list_objects(bucket_name, prefix='', delimiter=delimiter)
   else:
-    objects_list = fds_client.list_objects(bucket_name, prefix=data_dir, delimiter=delimiter)
+    objects_list = fds_client.list_objects(bucket_name, prefix=object_prefix, delimiter=delimiter)
   # print(objects_list.objects)
   while True:
     for obj in objects_list.objects:
       if obj.object_name.endswith('/'):
-        mkdirs(obj.object_name)
+        mkdirs(data_dir + obj.object_name)
       else:
         if '/' in obj.object_name:
-          mkdirs(obj.object_name[:obj.object_name.rfind('/')])
-        get_object(obj.object_name, bucket_name, obj.object_name, None, 0, -1)
+          mkdirs(data_dir + obj.object_name[:obj.object_name.rfind('/')])
+        get_object(data_dir + obj.object_name, bucket_name, obj.object_name, None, 0, -1)
         logger.debug("Download [%s/%s] success" % (bucket_name, obj.object_name))
     for prefix in objects_list.common_prefixes:
-      mkdirs(prefix)
+      mkdirs(data_dir + prefix)
     if objects_list.is_truncated:
       objects_list = fds_client.list_next_batch_of_objects(objects_list)
     else:
       break
 
-  sys.stdout.write("Downdoad directory[%s] success" % data_dir)
+  sys.stdout.write("Downdoad directory[%s] success" % object_prefix)
   sys.stdout.flush()
 
 def put_bucket(bucket_name):
@@ -792,7 +804,7 @@ def main():
                       default=False,
                       help='If toggled, delete object without move to trash')
 
-  parser.add_argument('--object_prefix',
+  parser.add_argument('-P', '--object_prefix',
                       nargs='?',
                       metavar="object's prefix",
                       type=str,
@@ -909,8 +921,9 @@ def main():
           put_bucket(bucket_name)
         pass
       elif method == 'get':
-        if data_dir:
-          download_directory(bucket_name=bucket_name, data_dir=data_dir, recursive=recursive)
+        if object_prefix:
+          download_directory(bucket_name=bucket_name, object_prefix=object_prefix,
+                             data_dir=data_dir, recursive=recursive)
         elif object_name:
           get_object(data_file=data_file,
                      bucket_name=bucket_name,
