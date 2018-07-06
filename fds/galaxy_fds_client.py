@@ -102,11 +102,14 @@ class GalaxyFDSClient(object):
     return secret_key
 
   def load_config(self, config_key):
-    config_filename = os.path.join(os.path.expanduser('~'), ".config/xiaomi/config")
-    if os.path.exists(config_filename):
-      with open(config_filename) as f:
-        data = to_json_object(f)
-        return data[config_key]
+    try:
+      config_filename = os.path.join(os.path.expanduser('~'), ".config/xiaomi/config")
+      if os.path.exists(config_filename):
+        with open(config_filename) as f:
+          data = to_json_object(f.read())
+          return data[config_key]
+    except:
+      pass
 
   @property
   def delimiter(self):
