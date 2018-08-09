@@ -63,7 +63,7 @@ class ClientTest(unittest.TestCase):
 
   @staticmethod
   def init_from_local_config():
-    global access_key, access_secret, endpoint
+    global access_key, access_secret, endpoint, app_id, acl_ak, acl_access_secret, region_name
     if type(access_key) == str and access_key.strip() != "":
       return
     config_dirs = [os.path.join(expanduser("~"), ".config", "xiaomi", "config"),
@@ -78,6 +78,10 @@ class ClientTest(unittest.TestCase):
     access_key = config.get("xiaomi_access_key_id", "")
     access_secret = config.get("xiaomi_secret_access_key", "")
     endpoint = config.get("xiaomi_fds_endpoint", "")
+    app_id = config.get("xiaomi_app_id", "")
+    acl_ak = config.get("xiaomi_acl_access_key", "")
+    acl_access_secret = config.get("xiaomi_acl_access_secret", "")
+    region_name = config.get("xiaomi_region_name", "")
 
   def test_set_endpoint(self):
     httpConfig = FDSClientConfiguration(region_name, False, False, False)
@@ -92,7 +96,7 @@ class ClientTest(unittest.TestCase):
 
   def test_uri(self):
     client = GalaxyFDSClient(access_key, access_secret,
-        FDSClientConfiguration(region_name, False, False, False))
+      FDSClientConfiguration(region_name, False, False, False))
     bucket_name = self.bucket_name + "1"
     if (client.does_bucket_exist(bucket_name)):
       client.delete_bucket(bucket_name)
@@ -145,7 +149,7 @@ class ClientTest(unittest.TestCase):
     bucketAcl.add_grant(Grant(Grantee("111"), Permission.READ))
     bucketAcl.add_grant(Grant(Grantee('109901'), Permission.FULL_CONTROL))
     bucketAcl.add_grant(Grant(Grantee('123456'), Permission.SSO_WRITE))
-    bucketAcl.add_grant(Grant(Grantee(appid), Permission.FULL_CONTROL))
+    bucketAcl.add_grant(Grant(Grantee(app_id), Permission.FULL_CONTROL))
     self.client.set_bucket_acl(self.bucket_name, bucketAcl)
 
     aclListGot = self.client.get_bucket_acl(self.bucket_name)
@@ -180,11 +184,8 @@ class ClientTest(unittest.TestCase):
     self.assertFalse(
       self.client.does_object_exists(self.bucket_name, object_name))
     self.assertTrue(acl_client.does_bucket_exist(self.bucket_name))
-    try:
-      acl_client.delete_bucket(self.bucket_name)
-    except GalaxyFDSClientException as e:
-      print(e.message)
-    self.assertTrue(self.client.does_bucket_exist(self.bucket_name))
+#    acl_client.delete_bucket(self.bucket_name)
+#    self.assertFalse(self.client.does_bucket_exist(self.bucket_name))
 
   def test_object_acl(self):
     object_name = "test1"
@@ -330,7 +331,7 @@ class ClientTest(unittest.TestCase):
 
     self.client.delete_objects(self.bucket_name, [object_prefix + str(i) for i in range(total_count)])
 
-    list_result = self.client.list_trash_objects(self.bucket_name, "", max_keys=50)
+    list_result = self.client.list_trash_objects(self.bucket_name + "/trash-obj-", "", max_keys=50)
     sub_count1 = len(list_result.objects)
     self.assertEqual(50, sub_count1)
     print(list_result.next_marker)
@@ -395,11 +396,10 @@ class ClientTest(unittest.TestCase):
     rule2.update_action(FDSNonCurrentVersionExpiration({"days": 0.00001}))
 
     ttlconfig = FDSLifecycleConfig()
-    ttlconfig.bucket_name = self.bucket_name
     ttlconfig.rules.append(rule1)
     ttlconfig.rules.append(rule2)
 
-    self.client._update_lifecycle_config_(ttlconfig)
+    self.client._update_lifecycle_config_(self.bucket_name, ttlconfig)
     print(json.dumps(self.client._get_lifecycle_config_(self.bucket_name)))
 
     ttlconfig = self.client._get_lifecycle_config_(self.bucket_name)
@@ -437,3 +437,29 @@ class ClientTest(unittest.TestCase):
     # get No.98
     self.assertEqual(get_content(98),
       self.client.get_object(self.bucket_name, object_name, version_id=vids[2]).get_next_chunk_as_string())
+
+  def test_auto_convert_webp(self):
+    bucket_name = self.bucket_name + "-convert-webp"
+    object_name = "test.jpg"
+
+    try:
+      if not self.client.does_bucket_exist(bucket_name):
+        self.client.create_bucket(bucket_name)
+
+      self.client._enable_auto_convert_webp_(bucket_name, True)
+      self.assertTrue(self.client._is_enable_auto_convert_webp_(bucket_name))
+
+      path = os.path.join(expanduser("~"), "webp-images/")
+      for fn in os.listdir(path):
+        if fn.endswith("jpg"):
+          with open(path + fn, "rb") as f:
+            self.client.put_object(bucket_name, fn, f)
+
+      for fn in os.listdir(path):
+        if fn.endswith("jpg"):
+          fds_object = self.client._get_webp_(bucket_name, fn)
+          with open(path + fn + ".webp", "wb") as f:
+            for chunk in fds_object.stream:
+              f.write(chunk)
+    finally:
+      ClientTest.delete_objects_and_bucket(self.client, bucket_name)

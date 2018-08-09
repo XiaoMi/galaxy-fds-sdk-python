@@ -32,10 +32,12 @@ from fds.model.subresource import SubResource
 from fds.model.init_multipart_upload_result import InitMultipartUploadResult
 from fds.model.upload_part_result import UploadPartResult
 from fds.model.fds_lifecycle import FDSLifecycleConfig
+from fds.model.copy_object_result import CopyObjectResult
 import os
 import sys
 from .utils import uri_to_bucket_and_object, to_json_object
 import logging
+import time
 
 class GalaxyFDSClient(object):
   '''
@@ -500,7 +502,7 @@ class GalaxyFDSClient(object):
     return None
 
 
-  def _delete_objects_(self, bucket_name, object_names):
+  def delete_objects(self, bucket_name, object_names):
     '''
     Delete specified objects in the bucket
     :param bucket_name:
@@ -854,6 +856,30 @@ class GalaxyFDSClient(object):
     return '%s%s/%s' % (self._config.get_download_base_uri(), bucket_name,
       object_name)
 
+  def copy_object(self, src_bucket_name, src_object_name, dst_bucket_name, dst_object_name):
+    '''
+    Copy src_object_name from src_bucket_name to dst_bucket_name, and rename it to dst_object_name
+    :param src_bucket_name: Source bucket name
+    :param src_object_name: Source object name
+    :param dst_bucket_name: Target bucket name
+    :param dst_object_name: Target object name
+    :return:
+    '''
+    uri = '%s%s/%s?cp=cpparam' % (self._config.get_upload_base_uri(), dst_bucket_name,
+                       dst_object_name)
+
+    data = { "srcBucketName": src_bucket_name, "srcObjectName": src_object_name }
+
+    response = self._request.put(uri, data=json.dumps(data, default=lambda x : x.to_string()), auth=self._auth)
+    if response.status_code == requests.codes.ok:
+      return CopyObjectResult(to_json_object(response.content))
+    headers = ""
+    if self._config.debug:
+      headers = ' header=%s' % response.headers
+    message = 'Copy object failed, status=%s, reason=%s%s' % (
+      response.status_code, response.content, headers)
+    raise GalaxyFDSClientException(message)
+
   def _acp_to_acl(self, acp):
     '''
     Translate AccessControlPolicy to AccessControlList.
@@ -868,6 +894,10 @@ class GalaxyFDSClient(object):
         acl.add_grant(g)
       return acl
     return str()
+
+  # def copy_object(self, srcBucketName, srcObjectName, dstBucketName, dstObjectName):
+  #   cp_request = FDSCopyObjectRequest(srcBucketName, srcObjectName, dstBucketName, dstObjectName)
+  #   return self.copy_object(cp_request)
 
   def _acl_to_acp(self, acl):
     '''
@@ -1006,5 +1036,76 @@ class GalaxyFDSClient(object):
       if self._config.debug:
         headers = ' header=%s' % response.headers
       message = 'Get bucket lifecycle config failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _enable_auto_convert_webp_(self, bucket_name, is_enable):
+    '''
+    Enable bucket auto convert webp.
+    :param bucket_name:     The name of the bucket
+    '''
+    uri = '%s%s?autoWebp=%s' % (self._config.get_base_uri(), bucket_name, (is_enable and "true" or "false"))
+    response = self._request.put(uri, auth=self._auth)
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Enable bucket auto convert webp failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _is_enable_auto_convert_webp_(self, bucket_name):
+    '''
+    Check the existence of a specified object.
+    :param bucket_name: The name of the bucket
+    :param object_name: The name of the object to check
+    :return: True if the object exists, otherwise, False
+    '''
+    uri = '%s%s?autoWebp' % (self._config.get_base_uri(), bucket_name)
+    response = self._request.get(uri, auth=self._auth)
+    if response.status_code == requests.codes.ok:
+      content = response.content
+      if IS_PY3:
+        content = content.decode("UTF-8")
+      return content.lower() == "true"
+    elif response.status_code == requests.codes.not_found:
+      return False
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Check object existence failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+
+  def _get_webp_(self, bucket_name, object_name, stream=None):
+    '''
+    Get a specified object from a bucket.
+    :param bucket_name: The name of the bucket from whom to get the object
+    :param object_name: The name of the object to get
+    :param stream:      Set True to enable streaming, otherwise, whole object content is read to memory
+    :return: The FDS object
+    '''
+    uri = '%s%s/%s?f=webp' % (self._config.get_download_base_uri(), bucket_name,
+      object_name)
+    response = self._request.get(uri, auth=self._auth, stream=stream)
+
+    if response.status_code == requests.codes.ok or \
+        response.status_code == requests.codes.partial:
+      obj = FDSObject()
+      obj.stream = response.iter_content()
+      summary = FDSObjectSummary()
+      summary.bucket_name = bucket_name
+      summary.object_name = object_name
+      summary.size = int(response.headers['content-length'])
+      obj.summary = summary
+      obj.metadata = self._parse_object_metadata_from_headers(response.headers)
+      return obj
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get webp failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)

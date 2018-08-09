@@ -5,6 +5,6 @@ access_key = ""
 access_secret = ""
 endpoint = None
 
-appid = ""
+app_id = ""
 acl_ak = ""
 acl_access_secret = ""
