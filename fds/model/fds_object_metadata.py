@@ -12,9 +12,19 @@ class FDSObjectMetadata(object):
     Common.CACHE_CONTROL,
     Common.CONTENT_ENCODING,
     Common.CONTENT_LENGTH,
+    Common.CONTENT_RANGE,
+    Common.LAST_MODIFIED,
     Common.CONTENT_MD5,
     Common.CONTENT_TYPE,
-    Common.UPLOAD_TIME
+    Common.LAST_CHECKED,
+    Common.UPLOAD_TIME,
+    Common.EXPIRATION_TIME,
+    Common.OBJECT_OWNER_ID,
+    Common.FILE_MODE,
+    Common.MULITPART_UPLOAD_MODE,
+    Common.PREVIOUS_VERSION_ID,
+    Common.SERVER_SIDE_ENCRYPTION,
+    Common.STORAGE_CLASS
   ]
 
   def __init__(self):

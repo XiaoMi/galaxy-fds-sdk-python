@@ -79,6 +79,9 @@ class FDSClientConfiguration(object):
   def get_base_uri(self):
     return self._build_base_uri(False)
 
+  def get_cdn_base_uri(self):
+    return self._build_base_uri(True)
+
   def _build_base_uri(self, enable_cdn):
     base_uri = str()
     if self._enable_https:

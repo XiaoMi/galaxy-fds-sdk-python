@@ -33,6 +33,7 @@ from fds.model.init_multipart_upload_result import InitMultipartUploadResult
 from fds.model.upload_part_result import UploadPartResult
 from fds.model.fds_lifecycle import FDSLifecycleConfig
 from fds.model.copy_object_result import CopyObjectResult
+from fds.model.timestamp_anti_stealing_link_config import TimestampAntiStealingLinkConfig
 import os
 import sys
 from .utils import uri_to_bucket_and_object, to_json_object
@@ -917,7 +918,7 @@ class GalaxyFDSClient(object):
     Parse object metadata from the response headers.
     '''
     metadata = FDSObjectMetadata()
-    header_keys = [c.lower() for c in response_headers.keys()];
+    header_keys = [c.lower() for c in response_headers.keys()]
     for key in FDSObjectMetadata.PRE_DEFINED_METADATA:
       if key.lower() in header_keys:
         metadata.add_header(key, response_headers[key])
@@ -1109,3 +1110,75 @@ class GalaxyFDSClient(object):
       message = 'Get webp failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
+  
+  def generate_anti_stealing_uri(self, bucket_name, object_name, expiration, key):
+    '''
+    Generate anti stealing URI
+    :param bucket_name: The name of the bucket from whom to get the object
+    :param object_name: The name of the object to get
+    :param expiration : The timestamp of milliseconds from 1970-01-01-00:00:00
+    :param key        : The key you set up for the bucket
+    :return: The anti stealing URI 
+    '''
+    return self._generate_anti_stealing_uri(self._config.get_base_uri(), bucket_name, object_name, expiration, key)
+  
+  def generate_anti_stealing_cdn_uri(self, bucket_name, object_name, expiration, key):
+    '''
+    Generate anti stealing CDN URI
+    :param bucket_name: The name of the bucket from whom to get the object
+    :param object_name: The name of the object to get
+    :param expiration : The timestamp of milliseconds from 1970-01-01-00:00:00
+    :param key        : The key you set up for the bucket
+    :return: The anti stealing CDN URI 
+    '''
+    return self._generate_anti_stealing_uri(self._config.get_cdn_base_uri(), bucket_name, object_name, expiration, key)
+
+  def _generate_anti_stealing_uri(self, base_uri, bucket_name, object_name, expiration, key):
+    timestamp = int(expiration) / 1000
+    t = hex(timestamp).lstrip('0x')
+    string_to_cal = key + '/' + bucket_name + '/' + object_name + t
+    m = hashlib.md5()
+    m.update(string_to_cal)
+    sign = m.hexdigest()
+
+    return "%s%s/%s?sign=%s&t=%s" % (base_uri, bucket_name, object_name, sign, t)
+
+  def update_timestamp_anti_stealing_link_config(self, bucket_name, config):
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    resp = self._request.put(uri, auth=self._auth, params={ 'antiStealingLink': '' }, data=json.dumps(config, default=lambda x : x.to_string()))
+
+    if resp.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % resp.headers
+      message = 'Update timestamp anti stealing link config failed, status=%s, reason=%s%s' % (
+        resp.status_code, resp.content, headers)
+      raise GalaxyFDSClientException(message)
+    
+  def get_timestamp_anti_stealing_link_config(self, bucket_name):
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    resp = self._request.get(uri, params={ 'antiStealingLink': '' }, auth=self._auth)
+
+    if resp.status_code == requests.codes.ok:
+      config = TimestampAntiStealingLinkConfig(to_json_object(resp.content))
+      return config
+
+    headers = ""
+    if self._config.debug:
+      headers = ' header=%s' % resp.headers
+    message = 'Get timestamp anti stealing link config failed, status=%s, reason=%s%s' % (
+      resp.status_code, resp.content, headers)
+    raise GalaxyFDSClientException(message)
+
+  def delete_timestamp_anti_stealing_link_config(self, bucket_name):
+    uri = '%s%s' % (self._config.get_base_uri(), bucket_name)
+    resp = self._request.delete(uri, params={ 'antiStealingLink': '' }, auth=self._auth)
+
+    if resp.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % resp.headers
+      message = 'Delete timestamp anti stealing link config failed, status=%s, reason=%s%s' % (
+        resp.status_code, resp.content, headers)
+      raise GalaxyFDSClientException(message)
+      
