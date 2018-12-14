@@ -1,10 +1,12 @@
 from .permission import Owner
 
+
 class FDSBucket(object):
-  '''
+  """
   The FDS bucket class.
-  '''
-  def __init__(self, bucket_name, owner = None):
+  """
+
+  def __init__(self, bucket_name, owner=None):
     self.bucket_name = bucket_name
     self.owner = owner
     self.create_date = None
@@ -22,4 +24,3 @@ class FDSBucket(object):
       self._owner = Owner().from_json(json)
     else:
       self._owner = json
-

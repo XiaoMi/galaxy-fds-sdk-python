@@ -1,15 +1,18 @@
 from sys import version_info
+
 IS_PY3 = version_info[0] >= 3
 
 if IS_PY3:
-  from urllib.request import urlopen
+  pass
 else:
-  from urllib2 import urlopen
+  pass
+
 
 class FDSObject(object):
   '''
   The FDS Object class.
   '''
+
   def __init__(self):
     self.summary = None
     self.metadata = None

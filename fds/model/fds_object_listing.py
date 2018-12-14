@@ -1,10 +1,12 @@
 from .fds_object_summary import FDSObjectSummary
 from .permission import Owner
 
+
 class FDSObjectListing(dict):
   '''
   The FDS Object Listing class.
   '''
+
   def __init__(self, json):
     dict.__init__(self, json)
     self._objects = []
@@ -17,7 +19,7 @@ class FDSObjectListing(dict):
       self._objects.append(summary)
 
   def __str__(self):
-      return str(map(lambda x : x.object_name, self._objects))
+    return str(map(lambda x: x.object_name, self._objects))
 
   @property
   def prefix(self):
@@ -103,6 +105,3 @@ class FDSObjectListing(dict):
   @is_truncated.setter
   def is_truncated(self, is_truncated):
     self['truncated'] = is_truncated
-
-
-

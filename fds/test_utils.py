@@ -2,6 +2,7 @@ import unittest
 
 import utils
 
+
 class UtilsTest(unittest.TestCase):
 
   def test_rui_to_bucket_and_object(self):
@@ -20,6 +21,6 @@ class UtilsTest(unittest.TestCase):
     self.assertEquals(bucket, "bucket1")
     self.assertEquals(object, "folder1/folder2/object1")
 
+
 if __name__ == "__main__":
   unittest.main()
-

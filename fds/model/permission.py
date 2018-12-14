@@ -1,10 +1,12 @@
 from sys import version_info
+
 IS_PY3 = version_info[0] >= 3
 
+
 class Permission(object):
-  '''
+  """
   The Permission definition class.
-  '''
+  """
 
   '''
   The READ permission: when it applies to buckets it means allow the grantee to
@@ -81,12 +83,14 @@ class Permission(object):
   def get_value(self):
     return self._value
 
+
 class UserGroups(object):
   '''
   The user groups class.
   '''
   ALL_USERS = 'ALL_USERS'
   AUTHENTICATED_USERS = 'AUTHENTICATED_USERS'
+
 
 class GrantType(object):
   '''
@@ -95,10 +99,12 @@ class GrantType(object):
   USER = 'USER'
   GROUP = 'GROUP'
 
+
 class Grantee(dict):
   '''
   The grantee definition class.
   '''
+
   def __init__(self, id):
     self.id = id
 
@@ -118,10 +124,12 @@ class Grantee(dict):
   def id(self, id):
     self['id'] = id
 
+
 class Owner(dict):
   '''
   The owner definition class.
   '''
+
   @staticmethod
   def from_json(json):
     if json != '':
@@ -149,10 +157,12 @@ class Owner(dict):
   def display_name(self, display_name):
     self['displayName'] = display_name
 
+
 class Grant(dict):
   '''
   The grant class.
   '''
+
   def __init__(self, grantee, permission):
     self.grantee = grantee
     self.type = GrantType.USER
@@ -182,10 +192,12 @@ class Grant(dict):
   def type(self, type):
     self['type'] = type
 
+
 class AccessControlList(object):
   '''
   The access control list class.
   '''
+
   def __init__(self):
     self.acl = {}
 
@@ -203,8 +215,3 @@ class AccessControlList(object):
       if self.acl[k] != other.acl[k]:
         return False
     return True
-
-
-
-
-

@@ -10,6 +10,8 @@ fire = "*"
 
 [dev-packages]
 "autopep8" = "*"
+"pep8" = "*"
+rope = "*"
 
 [requires]
-python_version = "3.5"
+python_version = "3"

@@ -1,7 +1,8 @@
 class UploadPartResult(dict):
-  '''
+  """
   The Upload Part Result class.
-  '''
+  """
+
   def __init__(self, json):
     self.partNumber = json['partNumber']
     self.etag = json['etag']

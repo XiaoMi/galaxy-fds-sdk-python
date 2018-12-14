@@ -1,7 +1,8 @@
-#wrap the requests library
+# wrap the requests library
 
 import requests
 from requests.sessions import HTTPAdapter
+
 
 class FDSRequest:
   def __init__(self, timeout, max_retries):
@@ -25,37 +26,30 @@ class FDSRequest:
     session.close()
     return response
 
-
   def get(self, url, **kwargs):
     kwargs.setdefault('allow_redirects', True)
     return self.request('get', url, kwargs)
-
 
   def options(self, url, **kwargs):
     kwargs.setdefault('allow_redirects', True)
     return self.request('options', url, kwargs)
 
-
   def head(self, url, **kwargs):
     kwargs.setdefault('allow_redirects', False)
     return self.request('head', url, kwargs)
-
 
   def post(self, url, data=None, json=None, **kwargs):
     kwargs['data'] = data
     kwargs['json'] = json
     return self.request('post', url, kwargs)
 
-
   def put(self, url, data=None, **kwargs):
     kwargs['data'] = data
-    return self.request('put', url,  kwargs)
-
+    return self.request('put', url, kwargs)
 
   def patch(self, url, data=None, **kwargs):
     kwargs['data'] = data
-    return self.request('patch', url,  kwargs)
-
+    return self.request('patch', url, kwargs)
 
   def delete(self, url, **kwargs):
     return self.request('delete', url, kwargs)

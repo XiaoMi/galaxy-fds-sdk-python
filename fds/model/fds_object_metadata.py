@@ -3,9 +3,9 @@ from fds.galaxy_fds_client_exception import GalaxyFDSClientException
 
 
 class FDSObjectMetadata(object):
-  '''
+  """
   The FDS object metadata class.
-  '''
+  """
   USER_DEFINED_METADATA_PREFIX = "x-xiaomi-meta-"
 
   PRE_DEFINED_METADATA = [
@@ -46,5 +46,3 @@ class FDSObjectMetadata(object):
 
     if not is_valid:
       raise GalaxyFDSClientException("Invalid metadata: " + key)
-
-

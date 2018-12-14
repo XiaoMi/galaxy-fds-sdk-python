@@ -1,9 +1,11 @@
-#coding=utf-8
+# coding=utf-8
 from __future__ import print_function
+
 import unittest
+from sys import version_info
+
 import time
 
-from sys import version_info
 IS_PY3 = version_info[0] >= 3
 
 if IS_PY3:
@@ -14,13 +16,13 @@ else:
 import hashlib
 
 import sys
+
 sys.path.append('../')
 import os
 from os.path import expanduser
 
 from fds.auth import Common
 from fds.galaxy_fds_client import GalaxyFDSClient
-from fds.galaxy_fds_client_exception import GalaxyFDSClientException
 from fds.fds_client_configuration import FDSClientConfiguration
 from fds.model.fds_object_metadata import FDSObjectMetadata
 from fds.model.permission import Permission
@@ -31,8 +33,8 @@ from fds.model.upload_part_result_list import UploadPartResultList
 from fds.model.fds_lifecycle import *
 import json
 
-from test.test_common import *
 from datetime import datetime
+
 
 class ClientTest(unittest.TestCase):
   @classmethod
@@ -64,10 +66,10 @@ class ClientTest(unittest.TestCase):
   @staticmethod
   def init_from_local_config():
     global access_key, access_secret, endpoint, app_id, acl_ak, acl_access_secret, region_name
-    if type(access_key) == str and access_key.strip() != "":
-      return
+    # if type(access_key) == str and access_key.strip() != "":
+    #   return
     config_dirs = [os.path.join(expanduser("~"), ".config", "xiaomi", "config"),
-      os.path.join(expanduser("~"), ".config", "fds", "client.config")];
+                   os.path.join(expanduser("~"), ".config", "fds", "client.config")];
     config = {}
     for config_dir in config_dirs:
       if not os.path.exists(config_dir):
@@ -96,7 +98,7 @@ class ClientTest(unittest.TestCase):
 
   def test_uri(self):
     client = GalaxyFDSClient(access_key, access_secret,
-      FDSClientConfiguration(region_name, False, False, False))
+                             FDSClientConfiguration(region_name, False, False, False))
     bucket_name = self.bucket_name + "1"
     if (client.does_bucket_exist(bucket_name)):
       client.delete_bucket(bucket_name)
@@ -161,7 +163,8 @@ class ClientTest(unittest.TestCase):
         self.assertTrue(i['permission'].to_string() == Permission(Permission.READ).to_string())
         readAclCnt += 1
       elif i['grantee']['id'] == '109901':
-        self.assertTrue(i['permission'].to_string() == Permission(Permission.FULL_CONTROL).to_string())
+        self.assertTrue(
+          i['permission'].to_string() == Permission(Permission.FULL_CONTROL).to_string())
         fullControlCnt += 1
       elif i['grantee']['id'] == '123456':
         self.assertTrue(i['permission'].to_string() == Permission(Permission.SSO_WRITE).to_string())
@@ -170,11 +173,12 @@ class ClientTest(unittest.TestCase):
     self.assertTrue(fullControlCnt == 1)
     self.assertTrue(writeWithSSOCnt == 1)
 
-#    self.client.set_bucket_acl(self.bucket_name, bucketAcl)
+    #    self.client.set_bucket_acl(self.bucket_name, bucketAcl)
     acl = self.client.get_bucket_acl(self.bucket_name)
     self.assertTrue(bucketAcl.is_subset(acl))
     acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
-        FDSClientConfiguration(region_name, False, False, False, endpoint=endpoint))
+                                 FDSClientConfiguration(region_name, False, False, False,
+                                                        endpoint=endpoint))
     object_name = "testBucketAcl7"
     acl_client.put_object(self.bucket_name, object_name, "hahhah")
     self.assertTrue(
@@ -184,8 +188,9 @@ class ClientTest(unittest.TestCase):
     self.assertFalse(
       self.client.does_object_exists(self.bucket_name, object_name))
     self.assertTrue(acl_client.does_bucket_exist(self.bucket_name))
-#    acl_client.delete_bucket(self.bucket_name)
-#    self.assertFalse(self.client.does_bucket_exist(self.bucket_name))
+
+  #    acl_client.delete_bucket(self.bucket_name)
+  #    self.assertFalse(self.client.does_bucket_exist(self.bucket_name))
 
   def test_object_acl(self):
     object_name = "test1"
@@ -203,13 +208,14 @@ class ClientTest(unittest.TestCase):
     self.assertTrue(objectAcl.is_subset(acl))
 
     acl_client = GalaxyFDSClient(acl_ak, acl_access_secret,
-        FDSClientConfiguration(region_name, False, False, False, endpoint=endpoint))
+                                 FDSClientConfiguration(region_name, False, False, False,
+                                                        endpoint=endpoint))
     self.assertTrue(
-        self.client.does_object_exists(self.bucket_name, object_name))
+      self.client.does_object_exists(self.bucket_name, object_name))
     print(acl_client.get_object(self.bucket_name, object_name))
     self.client.delete_object(self.bucket_name, object_name)
     self.assertFalse(
-        self.client.does_object_exists(self.bucket_name, object_name))
+      self.client.does_object_exists(self.bucket_name, object_name))
 
   def test_get_object_and_metadata(self):
     object_name = "test1"
@@ -221,7 +227,8 @@ class ClientTest(unittest.TestCase):
     self.assertEqual(partial_object.get_next_chunk_as_string(), "st1")
     metadata = self.client.get_object_metadata(self.bucket_name, object_name)
     if IS_PY3:
-      self.assertEqual(hashlib.md5("test1".encode("UTF-8")).hexdigest(), metadata.metadata["content-md5"])
+      self.assertEqual(hashlib.md5("test1".encode("UTF-8")).hexdigest(),
+                       metadata.metadata["content-md5"])
     else:
       self.assertEqual(hashlib.md5("test1").hexdigest(), metadata.metadata["content-md5"])
     print(metadata.metadata)
@@ -256,7 +263,7 @@ class ClientTest(unittest.TestCase):
     metadata = FDSObjectMetadata()
 
     metadata.add_user_metadata(FDSObjectMetadata.USER_DEFINED_METADATA_PREFIX
-                        + "test", "test-value")
+                               + "test", "test-value")
     metadata.add_header(Common.CACHE_CONTROL, "no-cache")
 
     try:
@@ -275,19 +282,21 @@ class ClientTest(unittest.TestCase):
     obj_prefix = "obj_"
     # add 2000 objects to make sure the result is truncated
     for i in range(2000):
-      self.client.put_object(self.bucket_name, obj_prefix+str(i), test_content)
+      self.client.put_object(self.bucket_name, obj_prefix + str(i), test_content)
     for obj in self.client.list_all_objects(self.bucket_name):
       self.client.delete_object(self.bucket_name, obj.object_name)
 
   def test_multipart_upload(self):
     object_name = "test_multipart_upload"
     part_num = 3
-    part_content = "1"*5242880
+    part_content = "1" * 5242880
     upload_list = []
     upload_token = self.client.init_multipart_upload(self.bucket_name, object_name)
 
     for i in range(part_num):
-      upload_list.append(self.client.upload_part(self.bucket_name, object_name, upload_token.upload_id, i+1, part_content))
+      upload_list.append(
+        self.client.upload_part(self.bucket_name, object_name, upload_token.upload_id, i + 1,
+                                part_content))
 
     upload_part_result = UploadPartResultList({"uploadPartResultList": upload_list})
     print(json.dumps(upload_part_result))
@@ -308,7 +317,7 @@ class ClientTest(unittest.TestCase):
 
     obj.stream.close()
     print(length)
-    self.assertEqual(length, part_num*5242880)
+    self.assertEqual(length, part_num * 5242880)
 
   def test_delete_objects(self):
     total_count = 100;
@@ -329,7 +338,8 @@ class ClientTest(unittest.TestCase):
     for i in range(total_count):
       self.client.put_object(self.bucket_name, object_prefix + str(i), "")
 
-    self.client.delete_objects(self.bucket_name, [object_prefix + str(i) for i in range(total_count)])
+    self.client.delete_objects(self.bucket_name,
+                               [object_prefix + str(i) for i in range(total_count)])
 
     list_result = self.client.list_trash_objects(self.bucket_name + "/trash-obj-", "", max_keys=50)
     sub_count1 = len(list_result.objects)
@@ -338,7 +348,7 @@ class ClientTest(unittest.TestCase):
 
     list_result = self.client.list_next_batch_of_objects(list_result)
     sub_count2 = len(list_result.objects)
-    self.assertEqual(sub_count1+sub_count2, total_count)
+    self.assertEqual(sub_count1 + sub_count2, total_count)
 
   def test_restore(self):
     print("")
@@ -355,10 +365,15 @@ class ClientTest(unittest.TestCase):
     print(self.client.get_object(self.bucket_name, "aa/aa-1").get_next_chunk_as_string())
 
   def test_versioning(self):
+    '''
+    This test will not pass due to bucket cache in restserver
+    :return:
+    '''
     print("")
     versionings = [2, 3, 6, 7, 8, 12, 2]
     for v in versionings:
       self.client._update_bucket_versioning_(self.bucket_name, v)
+      time.sleep(5)
       self.assertEqual(self.client._get_bucket_versioning_(self.bucket_name), v)
 
   def test_get_version_ids(self):
@@ -369,10 +384,10 @@ class ClientTest(unittest.TestCase):
     for i in range(count):
       self.client.put_object(self.bucket_name, "obj", get_content(i))
     vids = self.client._list_version_ids_(self.bucket_name, "obj")
-    self.assertEqual(len(vids), count-1)
+    self.assertEqual(len(vids), count - 1)
     for i, id in enumerate(reversed(vids)):
-      self.assertEqual(get_content(i), self.client.get_object(self.bucket_name, "obj", version_id=id).get_next_chunk_as_string())
-
+      self.assertEqual(get_content(i), self.client.get_object(self.bucket_name, "obj",
+                                                              version_id=id).get_next_chunk_as_string())
 
   def test_lifecycle_config(self):
     print("")
@@ -399,18 +414,32 @@ class ClientTest(unittest.TestCase):
     ttlconfig.rules.append(rule1)
     ttlconfig.rules.append(rule2)
 
-    self.client._update_lifecycle_config_(self.bucket_name, ttlconfig)
-    print(json.dumps(self.client._get_lifecycle_config_(self.bucket_name)))
+    self.client.update_lifecycle_config(self.bucket_name, ttlconfig)
+    print(json.dumps(self.client.get_lifecycle_config(self.bucket_name)))
 
-    ttlconfig = self.client._get_lifecycle_config_(self.bucket_name)
+    ttlconfig = self.client.get_lifecycle_config(self.bucket_name)
     self.assertIsNotNone(ttlconfig.get_rule_by_prefix("image/tmp/"))
     self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
     ttlconfig.get_rule_by_prefix("image/tmp/").enabled = False
     self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
-    self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
+    self.assertIsNotNone(
+      ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
     ttlconfig.get_rule_by_prefix("image/").enabled = False
     self.assertIsNotNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg"))
-    self.assertIsNone(ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
+    self.assertIsNone(
+      ttlconfig.get_rule_by_object_name("image/tmp/123.jpg", enabled_rule_only=True))
+
+    rule3 = FDSLifecycleRule()
+    rule3.enabled = True
+    rule3.prefix = "log/tmp/"
+    rule3.update_action(FDSExpiration({"days": 0.001}))
+    rule3.update_action(FDSNonCurrentVersionExpiration({"days": 0.001}))
+    self.client.update_lifecycle_rule(self.bucket_name, rule3)
+    rule = self.client.get_lifecycle_config(self.bucket_name, "3")
+    self.assertEqual(rule.prefix, rule3.prefix)
+    self.assertEqual(rule.prefix, rule3.prefix)
+    self.assertEqual("3", rule.id)
+    print(self.client.get_lifecycle_config(self.bucket_name))
 
   def test_get_and_delete_version(self):
     print("")
@@ -421,22 +450,25 @@ class ClientTest(unittest.TestCase):
     self.assertIsNone(result.previous_version_id)
 
     count = 100
-    for i in range(1, count+1):
+    for i in range(1, count + 1):
       result = self.client.put_object(self.bucket_name, object_name, get_content(i))
       previous_version_id = result.previous_version_id
       self.assertIsNotNone(previous_version_id)
-      self.assertEqual(get_content(i-1),
-        self.client.get_object(self.bucket_name, object_name, version_id=previous_version_id).get_next_chunk_as_string())
+      self.assertEqual(get_content(i - 1),
+                       self.client.get_object(self.bucket_name, object_name,
+                                              version_id=previous_version_id).get_next_chunk_as_string())
 
     vid = self.client.delete_object(self.bucket_name, object_name)
     self.assertIsNotNone(vid)
     self.assertEqual(get_content(count),
-      self.client.get_object(self.bucket_name, object_name, version_id=vid).get_next_chunk_as_string())
-    
+                     self.client.get_object(self.bucket_name, object_name,
+                                            version_id=vid).get_next_chunk_as_string())
+
     vids = self.client._list_version_ids_(self.bucket_name, object_name)
     # get No.98
     self.assertEqual(get_content(98),
-      self.client.get_object(self.bucket_name, object_name, version_id=vids[2]).get_next_chunk_as_string())
+                     self.client.get_object(self.bucket_name, object_name,
+                                            version_id=vids[2]).get_next_chunk_as_string())
 
   def test_auto_convert_webp(self):
     bucket_name = self.bucket_name + "-convert-webp"

@@ -35,37 +35,39 @@ Usage Examples:
 \t[copy src_object from src_bucket to dst_bucket and rename it to dst_object]\n\t\tfds -m put -srcb SRC_BUCKET_NAME -srco SRC_OBJECT_NAME -dstb DST_BUCKET_NAME -dsto DST_OBJECT_NAME
 """
 from __future__ import print_function
+
 import json
 import logging
 import os
-from os.path import expanduser
-import argcomplete
-import argparse
 import sys
 import traceback
+from os.path import expanduser
+from sys import version_info
+
+import argcomplete
+import argparse
 from argcomplete.completers import ChoicesCompleter
 from datetime import datetime
 from time import sleep
 
 from fds import FDSClientConfiguration, GalaxyFDSClient
-from fds.model.fds_object_metadata import FDSObjectMetadata
-from fds.model.upload_part_result_list import UploadPartResultList
 from fds.galaxy_fds_client_exception import GalaxyFDSClientException
-from fds.model.permission import Permission
+from fds.model.fds_lifecycle import FDSLifecycleConfig, FDSLifecycleRule
+from fds.model.fds_object_metadata import FDSObjectMetadata
 from fds.model.permission import AccessControlList
 from fds.model.permission import Grant
-from fds.model.permission import Grantee
-from fds.model.permission import UserGroups
 from fds.model.permission import GrantType
-from fds.model.fds_lifecycle import FDSLifecycleConfig
+from fds.model.permission import Grantee
+from fds.model.permission import Permission
+from fds.model.permission import UserGroups
+from fds.model.upload_part_result_list import UploadPartResultList
 
-from sys import version_info
 IS_PY3 = version_info[0] >= 3
 
 if IS_PY3:
-  from urllib.parse import quote
+  pass
 else:
-  from urllib import quote
+  pass
 
 logger = None
 access_key = None
@@ -83,13 +85,16 @@ object_prefix = None
 gratee = None
 permission = None
 lifecycle = None
+lifecycle_rule = None
 recursive = False
-auto_webp = False
+webp_quality = None
+restore_archived = False
 
 expiration_in_hour = '1.0'
-multipart_upload_threshold_size = 50*1024*1024
-multipart_upload_buffer_size = 10*1024*1024
+multipart_upload_threshold_size = 50 * 1024 * 1024
+multipart_upload_buffer_size = 10 * 1024 * 1024
 max_upload_retry_time = 5
+
 
 def print_config(name, value):
   global logger
@@ -118,8 +123,9 @@ def parse_argument(args):
     enable_cdn, enable_https, list_dir, list_objects, \
     data_file, data_dir, start_mark, metadata, length, offset, \
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
-    force_delete, gratee, permission, disable_trash, object_prefix, lifecycle, \
-    recursive, dst_bucket_name, dst_object_name, src_bucket_name, src_object_name, auto_webp
+    force_delete, gratee, permission, disable_trash, object_prefix, lifecycle, lifecycle_rule, \
+    recursive, dst_bucket_name, dst_object_name, src_bucket_name, src_object_name, webp_quality, \
+    restore_archived
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -181,8 +187,11 @@ def parse_argument(args):
 
   print_config('object_prefix', object_prefix)
 
-  auto_webp = args.auto_webp
-  print_config('auto convert webp', auto_webp)
+  webp_quality = args.webp_quality
+  print_config('webp_quality', webp_quality)
+
+  restore_archived = args.restore_archived
+  print_config('restore archived object', restore_archived)
 
   if args.ak:
     access_key = args.ak
@@ -231,8 +240,11 @@ def parse_argument(args):
 
   lifecycle = args.lifecycle
   print_config('lifecycle', lifecycle)
+  lifecycle_rule = args.lifecycle_rule
+  print_config('lifecycle_rule', lifecycle_rule)
   recursive = args.recursive
   print_config('recursive', recursive)
+
 
 def get_buckets(fds_client):
   buckets = fds_client.list_buckets()
@@ -328,24 +340,16 @@ def put_object(data_file, bucket_name, object_name, metadata):
   result = None
   if data_file:
     with open(data_file, "rb") as f:
-      flen = os.path.getsize(data_file)
-      if flen < multipart_upload_threshold_size:
-        logger.debug("Put object directly")
-        result = fds_client.put_object(bucket_name=bucket_name,
-                                       object_name=object_name,
-                                       data=f,
-                                       metadata=fds_metadata)
-
-      else:
-        result = multipart_upload(bucket_name, object_name, fds_metadata, f)
+      result = fds_client.put_object(bucket_name, object_name, f, fds_metadata)
   else:
-    result = multipart_upload(bucket_name, object_name, fds_metadata, sys.stdin)
+    result = fds_client.put_object(bucket_name, object_name, sys.stdin, fds_metadata)
   logger.debug("Upload object success")
 
   if result:
     logger.info('Put object %s success' % object_name)
   else:
     logger.info('Put object %s failed' % object_name)
+
 
 def multipart_upload(bucket_name, object_name, metadata, stream):
   upload_token = None
@@ -373,8 +377,9 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
           upload_list.append(rtn)
           break
         except:
-          sleepSeconds = (i+1)*5
-          logger.warning("upload part %d failed, retry after %d seconds" % (part_number, sleepSeconds))
+          sleepSeconds = (i + 1) * 5
+          logger.warning(
+            "upload part %d failed, retry after %d seconds" % (part_number, sleepSeconds))
           sleep(sleepSeconds)
 
       if not rtn:
@@ -384,10 +389,11 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
     upload_part_result = UploadPartResultList({"uploadPartResultList": upload_list})
     logger.info("Upload data end, result : %s" % json.dumps(upload_part_result))
     return fds_client.complete_multipart_upload(bucket_name=upload_token.bucket_name,
-                                         object_name=upload_token.object_name,
-                                         upload_id=upload_token.upload_id,
-                                         metadata=metadata,
-                                         upload_part_result_list=json.dumps(upload_part_result))
+                                                object_name=upload_token.object_name,
+                                                upload_id=upload_token.upload_id,
+                                                metadata=metadata,
+                                                upload_part_result_list=json.dumps(
+                                                  upload_part_result))
     logger.info("Upload complete")
   except Exception as e:
     try:
@@ -396,6 +402,7 @@ def multipart_upload(bucket_name, object_name, metadata, stream):
     except:
       pass
     raise e
+
 
 def parse_metadata_from_str(metadata):
   fds_metadata = None
@@ -411,12 +418,13 @@ def parse_metadata_from_str(metadata):
   return fds_metadata
 
 
-def get_object(data_file, bucket_name, object_name, metadata, offset, length, is_webp=False):
+def get_object(data_file, bucket_name, object_name, metadata, offset, length, webp_quality=False):
   check_bucket_name(bucket_name)
   check_object_name(object_name)
-  if is_webp:
+  if webp_quality:
     fds_object = fds_client.__get_webp__(bucket_name=bucket_name,
-                                         object_name=object_name)
+                                         object_name=object_name,
+                                         quality=webp_quality)
     length = -1
     offset = 0
   else:
@@ -461,6 +469,7 @@ def post_object(data_file, bucket_name, metadata):
     logger.debug('Post object [' + fds_object.object_name + ']')
     sys.stdout.write(fds_object.object_name)
 
+
 def download_directory(bucket_name, object_prefix, data_dir, recursive):
   def mkdirs(path):
     if not os.path.isdir(path):
@@ -479,7 +488,7 @@ def download_directory(bucket_name, object_prefix, data_dir, recursive):
   if not data_dir.endswith('/'):
     data_dir += '/'
 
-  if object_prefix == '/': # download all objects under bucket
+  if object_prefix == '/':  # download all objects under bucket
     objects_list = fds_client.list_objects(bucket_name, prefix='', delimiter=delimiter)
   else:
     objects_list = fds_client.list_objects(bucket_name, prefix=object_prefix, delimiter=delimiter)
@@ -491,8 +500,12 @@ def download_directory(bucket_name, object_prefix, data_dir, recursive):
       else:
         if '/' in obj.object_name:
           mkdirs(data_dir + obj.object_name[:obj.object_name.rfind('/')])
-        get_object(data_dir + obj.object_name, bucket_name, obj.object_name, None, 0, -1)
-        logger.debug("Download [%s/%s] success" % (bucket_name, obj.object_name))
+        obj_path = data_dir + obj.object_name
+        if os.path.exists(obj_path) and obj.size == os.path.getsize(obj_path):
+          logger.debug("[%s/%s] is already downloaded" % (bucket_name, obj.object_name))
+        else:
+          get_object(data_dir + obj.object_name, bucket_name, obj.object_name, None, 0, -1)
+          logger.debug("Download [%s/%s] success" % (bucket_name, obj.object_name))
     for prefix in objects_list.common_prefixes:
       mkdirs(data_dir + prefix)
     if objects_list.is_truncated:
@@ -502,6 +515,7 @@ def download_directory(bucket_name, object_prefix, data_dir, recursive):
 
   sys.stdout.write("Downdoad directory[%s] success" % object_prefix)
   sys.stdout.flush()
+
 
 def put_bucket(bucket_name):
   check_bucket_name(bucket_name=bucket_name)
@@ -514,7 +528,9 @@ def get_bucket_acl(bucket_name):
   sys.stdout.write('ACL:\n')
   sys.stdout.write('gratee_id\tgrant_type\tpermission\n')
   for i in acl.get_grant_list():
-    sys.stdout.write(str(i.grantee['id']) + '\t' + str(i.type) + '\t' + str(i.permission.to_string()) + '\n')
+    sys.stdout.write(
+      str(i.grantee['id']) + '\t' + str(i.type) + '\t' + str(i.permission.to_string()) + '\n')
+
 
 def put_bucket_acl(bucket_name, gratee_list, permission_list):
   check_bucket_name(bucket_name=bucket_name)
@@ -525,6 +541,7 @@ def put_bucket_acl(bucket_name, gratee_list, permission_list):
       grant.type = GrantType.GROUP
     bucketAcl.add_grant(grant)
   fds_client.set_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
+
 
 def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
   check_bucket_name(bucket_name=bucket_name)
@@ -538,17 +555,33 @@ def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
   fds_client.set_object_acl(bucket_name, object_name, object_acl)
   logger.info('set [%s/%s] acl success', bucket_name, object_name)
 
+def restore_archived_object(bucket_name, object_name):
+  check_bucket_name(bucket_name=bucket_name)
+  check_object_name(object_name=object_name)
+  fds_client._restore_archived_object_(bucket_name, object_name)
+  logger.info('restore archived object [%s/%s] success; this may takes several hours', bucket_name, object_name)
+
 def put_bucket_lifecycle_config(bucket_name, lifecycle):
   check_bucket_name(bucket_name)
   lifecycle = FDSLifecycleConfig(json.loads(lifecycle))
-  fds_client._update_lifecycle_config_(bucket_name, lifecycle)
+  fds_client.update_lifecycle_config(bucket_name, lifecycle)
   sys.stdout.write("put [%s] lifecycle config success" % bucket_name)
   sys.stdout.flush()
 
+
+def put_bucket_lifecycle_rule(bucket_name, lifecycle_rule):
+  check_bucket_name(bucket_name)
+  rule = FDSLifecycleRule(json.loads(lifecycle_rule))
+  fds_client.update_lifecycle_rule(bucket_name, rule)
+  sys.stdout.write("put [%s] lifecycle rule success" % bucket_name)
+  sys.stdout.flush()
+
+
 def get_bucket_lifecycle_config(bucket_name):
-  lifecycle = fds_client._get_lifecycle_config_(bucket_name);
+  lifecycle = fds_client.get_lifecycle_config(bucket_name);
   sys.stdout.write(json.dumps(lifecycle))
   sys.stdout.flush()
+
 
 def delete_object(bucket_name, object_name, **kwargs):
   check_bucket_name(bucket_name=bucket_name)
@@ -558,13 +591,15 @@ def delete_object(bucket_name, object_name, **kwargs):
                            **kwargs)
   logger.info('delete object %s success' % (object_name))
 
+
 def delete_objects(bucket_name, **kwargs):
-    check_bucket_name(bucket_name=bucket_name)
-    for obj in fds_client.list_all_objects(bucket_name, prefix=kwargs["object_prefix"], delimiter=""):
-        fds_client.delete_object(bucket_name=bucket_name,
-                                object_name=obj.object_name,
-                                **kwargs)
-        logger.info('delete object %s success' % (obj.object_name))
+  check_bucket_name(bucket_name=bucket_name)
+  for obj in fds_client.list_all_objects(bucket_name, prefix=kwargs["object_prefix"], delimiter=""):
+    fds_client.delete_object(bucket_name=bucket_name,
+                             object_name=obj.object_name,
+                             **kwargs)
+    logger.info('delete object %s success' % (obj.object_name))
+
 
 def delete_bucket(bucket_name):
   if fds_client.does_bucket_exist(bucket_name):
@@ -572,6 +607,7 @@ def delete_bucket(bucket_name):
     logger.info('delete bucket success')
   else:
     logger.info('bucket does not exist')
+
 
 def delete_bucket_and_objects(bucket_name):
   if fds_client.does_bucket_exist(bucket_name):
@@ -582,13 +618,15 @@ def delete_bucket_and_objects(bucket_name):
   else:
     logger.info('bucket does not exist')
 
+
 def head_object(bucket_name, object_name):
   res = fds_client.does_object_exists(bucket_name=bucket_name,
-                                       object_name=object_name)
+                                      object_name=object_name)
   if res:
     logger.info('%s exists' % object_name)
   else:
     logger.info('%s does not exists' % object_name)
+
 
 def head_bucket(bucket_name):
   return fds_client.does_bucket_exist(bucket_name=bucket_name)
@@ -644,10 +682,12 @@ def list_object(bucket_name, object_name_prefix, start_mark=''):
   if list_result.is_truncated:
     sys.stdout.write('...\n')
 
+
 def list_version_ids(bucket_name, object_name):
   vids = fds_client._list_version_ids_(bucket_name, object_name)
   sys.stdout.write(json.dumps(vids))
   sys.stdout.flush()
+
 
 def copy_object(src_bucket_name, src_object_name, dst_bucket_name, dst_object_name):
   check_bucket_name(src_bucket_name)
@@ -656,19 +696,26 @@ def copy_object(src_bucket_name, src_object_name, dst_bucket_name, dst_object_na
   check_object_name(dst_object_name)
 
   result = None
-  result = fds_client.copy_object(src_bucket_name, src_object_name, dst_bucket_name, dst_object_name)
+  result = fds_client.copy_object(src_bucket_name, src_object_name, dst_bucket_name,
+                                  dst_object_name)
 
   logger.debug("Copy object success")
 
   if result:
-    logger.info('Successfully copy object %s from bucket %s to bucket %s, and rename it to %s' % (src_object_name, src_bucket_name, dst_bucket_name, dst_object_name))
+    logger.info('Successfully copy object %s from bucket %s to bucket %s, and rename it to %s' % (
+      src_object_name, src_bucket_name, dst_bucket_name, dst_object_name))
   else:
-    logger.info('Failed to copy object %s from bucket %s to bucket %s, and rename it to %s' % (src_object_name, src_bucket_name, dst_bucket_name, dst_object_name))
+    logger.info('Failed to copy object %s from bucket %s to bucket %s, and rename it to %s' % (
+      src_object_name, src_bucket_name, dst_bucket_name, dst_object_name))
 
-def enable_bucket_auto_convert_webp(bucket_name, auto_webp):
-  fds_client._enable_auto_convert_webp_(bucket_name, auto_webp)
-  logger.info(bucket_name + " auto convert webp status: " +
-              (fds_client._is_enable_auto_convert_webp_(bucket_name) and "true" or "false"))
+
+def set_bucket_default_webp_quality(bucket_name, webp_quality):
+  fds_client._set_bucket_default_webp_quality_(bucket_name, webp_quality)
+  res = fds_client._get_bucket_default_webp_quality_(bucket_name)
+  if res > 0:
+    logger.info("[%s] default webp quality: %d" % (bucket_name, res))
+  else:
+    logger.info("[%s] is not set convert webp" % bucket_name)
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__,
@@ -858,54 +905,68 @@ def main():
                       help="object's prefix")
 
   parser.add_argument('--lifecycle',
-                       nargs='?',
-                       metavar='lifecycle config, json format',
-                       dest='lifecycle',
-                       const=True,
-                       default=None,
-                       help='''Put or get lifecycle configof the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
+                      nargs='?',
+                      metavar='lifecycle config, json format',
+                      dest='lifecycle',
+                      const=True,
+                      default=None,
+                      help='''Put or get lifecycle configof the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
 
-  parser.add_argument('--auto-webp',
+  parser.add_argument('--lifecycle-rule',
+                      nargs='?',
+                      metavar='lifecycle rule, json format',
+                      dest='lifecycle_rule',
+                      const=True,
+                      default=None,
+                      help='''Add/update or get one rule of lifecycle config of the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
+
+  parser.add_argument('--webp-quality',
+                       nargs='?',
+                       dest='webp_quality',
+                       const=-1,
+                       default=None,
+                       help='Integer indicates webp quality, -1 will disable bucket auto convert webp')
+
+  parser.add_argument('--restore-archived',
                       action='store_true',
-                      dest='auto_webp',
+                      dest='restore_archived',
                       default=False,
-                      help='If toggled, enable bucket auto convert webp')
+                      help='''If toggled, restore archived object as standard.''')
 
   group = parser.add_argument_group('acl')
   group.add_argument('--gratee',
-                      nargs='+',
-                      metavar='user, group, ALL_USERS, AUTHENTICATED_USERS',
-                      dest='gratee',
-                      help='Add acl to bucket')
+                     nargs='+',
+                     metavar='user, group, ALL_USERS, AUTHENTICATED_USERS',
+                     dest='gratee',
+                     help='Add acl to bucket')
   group.add_argument('--permission',
-                      nargs='?',
-                      metavar="READ, WRITE, READ_OBJECTS, FULL_CONTROL",
-                      dest='permission',
-                      choices=['READ', 'WRITE', 'READ_OBJECTS', 'FULL_CONTROL'],
-                      help='Add acl to bucket')
+                     nargs='?',
+                     metavar="READ, WRITE, READ_OBJECTS, FULL_CONTROL",
+                     dest='permission',
+                     choices=['READ', 'WRITE', 'READ_OBJECTS', 'FULL_CONTROL'],
+                     help='Add acl to bucket')
 
   cp = parser.add_argument_group('cp')
   cp.add_argument('-srcb', '--src_bucket',
-                      nargs='?',
-                      metavar='bucket, name',
-                      dest='src_bucket_name',
-                      help='Copy object from src_bucket to dst_bucket')
+                  nargs='?',
+                  metavar='bucket, name',
+                  dest='src_bucket_name',
+                  help='Copy object from src_bucket to dst_bucket')
   cp.add_argument('-srco', '--src_object',
-                      nargs='?',
-                      metavar='object, name',
-                      dest='src_object_name',
-                      help='Copy object from src_bucket to dst_bucket')
+                  nargs='?',
+                  metavar='object, name',
+                  dest='src_object_name',
+                  help='Copy object from src_bucket to dst_bucket')
   cp.add_argument('-dstb', '--dst_bucket',
-                      nargs='?',
-                      metavar='bucket, name',
-                      dest='dst_bucket_name',
-                      help='Copy object from src_bucket to dst_bucket')
+                  nargs='?',
+                  metavar='bucket, name',
+                  dest='dst_bucket_name',
+                  help='Copy object from src_bucket to dst_bucket')
   cp.add_argument('-dsto', '--dst_object',
-                      nargs='?',
-                      metavar='object, name',
-                      dest='dst_object_name',
-                      help='Copy object from src_bucket to dst_bucket')
-
+                  nargs='?',
+                  metavar='object, name',
+                  dest='dst_object_name',
+                  help='Copy object from src_bucket to dst_bucket')
 
   argcomplete.autocomplete(parser)
 
@@ -931,7 +992,9 @@ def main():
   fds_config = FDSClientConfiguration(region_name=region,
                                       enable_https=enable_https,
                                       enable_cdn_for_download=enable_cdn,
-                                      enable_cdn_for_upload=enable_cdn)
+                                      enable_cdn_for_upload=enable_cdn,
+                                      threshold_size=multipart_upload_threshold_size,
+                                      part_size=multipart_upload_buffer_size)
   global end_point
   if not end_point is None:
     fds_config.set_endpoint(end_point)
@@ -943,12 +1006,13 @@ def main():
   global force_delete
   global disable_trash
   global object_prefix
-  global recursive, auto_webp
+  global recursive, webp_quality
 
   try:
     if presigned_url:
       expiration = int(1000 * (float(eval(expiration_in_hour)) * 3600 +
-                               float((datetime.utcnow() - datetime(1970, 1, 1, 0, 0, 0, 0)).total_seconds())))
+                               float((datetime.utcnow() - datetime(1970, 1, 1, 0, 0, 0,
+                                                                   0)).total_seconds())))
       meta = parse_metadata_from_str(metadata=metadata)
       content_type = None
       if meta and 'content-type' in meta.metadata:
@@ -969,7 +1033,8 @@ def main():
         if object_name is not None:
           list_version_ids(bucket_name=bucket_name, object_name=object_name)
         else:
-          list_object(bucket_name=bucket_name, object_name_prefix=list_objects, start_mark=start_mark)
+          list_object(bucket_name=bucket_name, object_name_prefix=list_objects,
+                      start_mark=start_mark)
       else:
         list_buckets(fds_client=fds_client, prefix=list_objects, start_mark=start_mark)
       pass
@@ -985,6 +1050,8 @@ def main():
                           metadata=metadata)
           elif gratee and permission:
             put_object_acl(bucket_name, object_name, gratee, permission)
+          elif restore_archived:
+            restore_archived_object(bucket_name, object_name)
           else:
             put_object(data_file=data_file,
                        bucket_name=bucket_name,
@@ -994,8 +1061,10 @@ def main():
           put_bucket_acl(bucket_name, gratee, permission)
         elif lifecycle:
           put_bucket_lifecycle_config(bucket_name, lifecycle)
-        elif auto_webp:
-          enable_bucket_auto_convert_webp(bucket_name=bucket_name, auto_webp=auto_webp)
+        elif lifecycle_rule:
+          put_bucket_lifecycle_rule(bucket_name, lifecycle_rule)
+        elif webp_quality:
+          set_bucket_default_webp_quality(bucket_name=bucket_name, webp_quality=webp_quality)
         else:
           put_bucket(bucket_name)
         pass
@@ -1010,7 +1079,7 @@ def main():
                      metadata=metadata,
                      offset=offset,
                      length=length,
-                     is_webp=auto_webp)
+                     webp_quality=webp_quality)
         elif lifecycle:
           get_bucket_lifecycle_config(bucket_name)
         else:
@@ -1062,4 +1131,3 @@ def main():
 
 if __name__ == "__main__":
   main()
-

@@ -1,10 +1,11 @@
 import base64
 import hmac
-
 from email.utils import formatdate
 from hashlib import sha1
-from requests.auth import AuthBase
 from sys import version_info
+
+from requests.auth import AuthBase
+
 IS_PY3 = version_info[0] >= 3
 if IS_PY3:
   from urllib.parse import unquote, urlparse
@@ -14,6 +15,7 @@ else:
 
 from fds.auth.common import Common
 from fds.model.subresource import SubResource
+
 
 class Signer(AuthBase):
   '''
@@ -28,9 +30,9 @@ class Signer(AuthBase):
 
   def __call__(self, request):
     request.headers[Common.DATE] = formatdate(timeval=None, localtime=False,
-      usegmt=True)
+                                              usegmt=True)
     signature = self._sign_to_base64(request.method, request.headers,
-      unquote(request.url), self._app_secret)
+                                     unquote(request.url), self._app_secret)
     request.headers[Common.AUTHORIZATION] = 'Galaxy-V2 %s:%s' % (
       self._app_key, signature)
     return request
@@ -75,16 +77,16 @@ class Signer(AuthBase):
     result = str()
     result += '%s\n' % http_method
     result += '%s\n' % self._get_header_value(http_headers,
-      Common.CONTENT_MD5)
+                                              Common.CONTENT_MD5)
     result += '%s\n' % self._get_header_value(http_headers,
-      Common.CONTENT_TYPE)
+                                              Common.CONTENT_TYPE)
     expires = self._get_expires(uri)
 
     if expires > 0:
       result += '%s\n' % expires
     else:
       xiaomi_date = self._get_header_value(http_headers,
-        Common.XIAOMI_HEADER_DATE)
+                                           Common.XIAOMI_HEADER_DATE)
       date = str()
       if len(xiaomi_date) == 0:
         date = self._get_header_value(http_headers, Common.DATE)
@@ -162,4 +164,3 @@ class Signer(AuthBase):
       if key == Common.EXPIRES:
         return int(query.split('=')[1])
     return 0
-

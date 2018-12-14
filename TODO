@@ -1,0 +1,12 @@
+
+fdscli command line:
+  ✔ ls @done(18-09-29 16:46)
+  ✔ md @done(18-09-29 16:46)
+  ✔ rm @done(18-09-29 16:46)
+  ✔ rb @done(18-09-29 16:46)
+  ✔ presigned @done(18-09-29 17:04)
+  ✔ cp @started(18-09-29 17:05) @done(18-09-30 00:50) @lasted(7h45m30s)
+  ✔ sync @done(18-09-30 19:04)
+  ☐ include, exclude
+  ✔ ttl @started(18-09-29 17:05) @done(18-09-29 17:47) @lasted(42m57s)
+  ✔ config @done(18-09-29 21:12)

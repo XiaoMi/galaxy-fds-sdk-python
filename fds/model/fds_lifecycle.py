@@ -1,6 +1,9 @@
 from __future__ import print_function
+
 import json
+
 from fds.galaxy_fds_client_exception import GalaxyFDSClientException
+
 
 class FDSLifecycleConfig(dict):
   '''
@@ -9,6 +12,7 @@ class FDSLifecycleConfig(dict):
   {
    "rules": [
      {
+       "id": 0,
        "enabled": true,
        "prefix": "log",
        "actions": {
@@ -38,6 +42,7 @@ class FDSLifecycleConfig(dict):
    ]
  }
   '''
+
   def __init__(self, json={}):
     dict.__init__(self, json)
     self._rules = []
@@ -67,6 +72,7 @@ class FDSLifecycleConfig(dict):
         return rule
     return None
 
+
 class FDSLifecycleRule(dict):
   def __init__(self, json={}):
     dict.__init__(self, json)
@@ -78,9 +84,15 @@ class FDSLifecycleRule(dict):
         self._actions[name] = FDSExpiration(action)
       elif name == 'nonCurrentVersionExpiration':
         self._actions[name] = FDSNonCurrentVersionExpiration(action)
+      elif name == 'lifeCycleStorageClass':
+        self._actions[name] = FDSLifecycleStorageClass(action)
       else:
         raise GalaxyFDSClientException("invalid action type: " + name)
     self['actions'] = self._actions
+
+  @property
+  def id(self):
+    return self.get('id', None)
 
   @property
   def enabled(self):
@@ -105,8 +117,10 @@ class FDSLifecycleRule(dict):
   def update_action(self, action):
     self.actions[action.name] = action
 
+
 class FDSExpiration(dict):
   name = 'expiration'
+
   def __init__(self, json):
     dict.__init__(self, json)
 
@@ -117,9 +131,11 @@ class FDSExpiration(dict):
   @days.setter
   def days(self, days):
     self['days'] = days
+
 
 class FDSNonCurrentVersionExpiration(dict):
   name = 'nonCurrentVersionExpiration'
+
   def __init__(self, json):
     dict.__init__(self, json)
 
@@ -130,6 +146,7 @@ class FDSNonCurrentVersionExpiration(dict):
   @days.setter
   def days(self, days):
     self['days'] = days
+
 
 class FDSAbortIncompleteMultipartUpload(dict):
   name = 'abortIncompleteMultipartUpload'
@@ -141,6 +158,25 @@ class FDSAbortIncompleteMultipartUpload(dict):
   @days.setter
   def days(self, days):
     self['days'] = days
+
+class FDSLifecycleStorageClass(dict):
+  name = 'lifeCycleStorageClass'
+
+  @property
+  def days(self):
+    return self.get('days', 0)
+
+  @days.setter
+  def days(self, days):
+    self['days'] = days
+
+  @property
+  def storage_class(self):
+    return self.get('storageClass', "")
+
+  @storage_class.setter
+  def storage_class(self, storage_class):
+    self['storageClass'] = storage_class
 
 if __name__ == '__main__':
   lifecycle_config = FDSLifecycleConfig()
@@ -158,7 +194,6 @@ if __name__ == '__main__':
 
   lifecycle_config.rules.append(rule1)
   print(json.dumps(lifecycle_config, sort_keys=True))
-
 
   jsonstr = '''  {
    "rules": [
@@ -186,6 +221,10 @@ if __name__ == '__main__':
          },
          "abortIncompleteMultipartUpload": {
            "days":7
+         },
+         "lifeCycleStorageClass": {
+           "days":2,
+           "storageClass":"ARCHIVE"
          }
        }
      }

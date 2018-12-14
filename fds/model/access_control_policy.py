@@ -1,5 +1,6 @@
 from ..galaxy_fds_client_exception import GalaxyFDSClientException
 
+
 class AccessControlPolicy(dict):
   '''
   The access control policy class.
@@ -36,4 +37,3 @@ class AccessControlPolicy(dict):
   @access_control_list.setter
   def access_control_list(self, access_control_list):
     self['accessControlList'] = access_control_list
-
