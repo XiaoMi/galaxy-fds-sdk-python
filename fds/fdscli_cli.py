@@ -237,10 +237,8 @@ class FDSCli(object):
     if self._sk is None:
       self.config()
     self._endpoint = self._local_config.endpoint if endpoint is None else endpoint
-    if self._sk is None:
+    if self._endpoint is None:
       self.config()
-
-    logger.debug("endpoint: " + self._endpoint)
 
     self._fds_config = FDSClientConfiguration(region_name="awsde0",
                                               enable_https=False,
@@ -301,18 +299,24 @@ class FDSCli(object):
       return
     bucket_name = url.bucket_name()
     if force:
-      all_objects = self._fds.list_all_objects(bucket_name, '', '')
-      names = []
-      try:
-        for o in all_objects:
-          names.append(o.object_name)
-      except GalaxyFDSClientException as e:
-        CLIPrinter.warn(e.message)
-      try:
-        self._fds.delete_objects(bucket_name, names)
-      except GalaxyFDSClientException as e:
-        CLIPrinter.fail(e.message)
-        return
+      result = self._fds.list_objects(bucket_name, '', '')
+      while True:
+        names = []
+        try:
+          for object_summary in result.objects:
+            names.append(object_summary.object_name)
+        except GalaxyFDSClientException as e:
+          CLIPrinter.warn(e.message)
+        try:
+          self._fds.delete_objects(bucket_name, names)
+        except GalaxyFDSClientException as e:
+          CLIPrinter.fail(e.message)
+          return
+        if result.is_truncated:
+          result = self._fds.list_next_batch_of_objects(result)
+        else:
+          break
+
     try:
       self._fds.delete_bucket(bucket_name)
     except GalaxyFDSClientException as e:

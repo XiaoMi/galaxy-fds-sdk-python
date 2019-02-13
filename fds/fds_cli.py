@@ -53,6 +53,7 @@ from time import sleep
 from fds import FDSClientConfiguration, GalaxyFDSClient
 from fds.galaxy_fds_client_exception import GalaxyFDSClientException
 from fds.model.fds_lifecycle import FDSLifecycleConfig, FDSLifecycleRule
+from fds.model.fds_cors import FDSCORSConfig, FDSCORSRule
 from fds.model.fds_object_metadata import FDSObjectMetadata
 from fds.model.permission import AccessControlList
 from fds.model.permission import Grant
@@ -86,8 +87,11 @@ gratee = None
 permission = None
 lifecycle = None
 lifecycle_rule = None
+cors=None
+cors_rule=None
 recursive = False
 webp_quality = None
+gif_extract_type = None
 restore_archived = False
 
 expiration_in_hour = '1.0'
@@ -124,7 +128,7 @@ def parse_argument(args):
     data_file, data_dir, start_mark, metadata, length, offset, \
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
     force_delete, gratee, permission, disable_trash, object_prefix, lifecycle, lifecycle_rule, \
-    recursive, dst_bucket_name, dst_object_name, src_bucket_name, src_object_name, webp_quality, \
+    recursive, dst_bucket_name, dst_object_name, src_bucket_name, src_object_name, webp_quality, gif_extract_type, cors, cors_rule,\
     restore_archived
   local_config = read_local_config()
   method = args.method
@@ -190,6 +194,9 @@ def parse_argument(args):
   webp_quality = args.webp_quality
   print_config('webp_quality', webp_quality)
 
+  gif_extract_type = args.gif_extract_type
+  print_config('gif_extract_type', gif_extract_type)
+
   restore_archived = args.restore_archived
   print_config('restore archived object', restore_archived)
 
@@ -242,6 +249,10 @@ def parse_argument(args):
   print_config('lifecycle', lifecycle)
   lifecycle_rule = args.lifecycle_rule
   print_config('lifecycle_rule', lifecycle_rule)
+  cors = args.cors
+  print_config('cors', cors)
+  cors_rule = args.cors_rule
+  print_config('cors_rule', cors_rule)
   recursive = args.recursive
   print_config('recursive', recursive)
 
@@ -418,13 +429,19 @@ def parse_metadata_from_str(metadata):
   return fds_metadata
 
 
-def get_object(data_file, bucket_name, object_name, metadata, offset, length, webp_quality=False):
+def get_object(data_file, bucket_name, object_name, metadata, offset, length, webp_quality=False, gif_extract_type=False):
   check_bucket_name(bucket_name)
   check_object_name(object_name)
   if webp_quality:
-    fds_object = fds_client.__get_webp__(bucket_name=bucket_name,
+    fds_object = fds_client._get_webp_(bucket_name=bucket_name,
                                          object_name=object_name,
                                          quality=webp_quality)
+    length = -1
+    offset = 0
+  elif gif_extract_type:
+    fds_object = fds_client._get_extracted_gif_(bucket_name=bucket_name,
+                                                object_name=object_name,
+                                                type=gif_extract_type)
     length = -1
     offset = 0
   else:
@@ -432,6 +449,7 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length, we
                                        object_name=object_name,
                                        position=offset,
                                        stream=True)
+
   length_left = length
   if length_left == -1:
     length_left = IS_PY3 and sys.maxsize or sys.maxint
@@ -536,11 +554,42 @@ def put_bucket_acl(bucket_name, gratee_list, permission_list):
   check_bucket_name(bucket_name=bucket_name)
   bucketAcl = AccessControlList()
   for role in gratee_list:
-    grant = Grant(Grantee(role), Permission(permission).get_value())
+    grant = Grant(Grantee(role), Permission(permission_list).get_value())
     if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
       grant.type = GrantType.GROUP
     bucketAcl.add_grant(grant)
   fds_client.set_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
+
+
+def delete_bucket_acl(bucket_name, gratee_list, permission_list):
+  check_bucket_name(bucket_name=bucket_name)
+  bucketAcl = AccessControlList()
+  for role in gratee_list:
+    grant = Grant(Grantee(role), Permission(permission_list).get_value())
+    if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
+      grant.type = GrantType.GROUP
+    bucketAcl.add_grant(grant)
+  fds_client.delete_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
+
+
+def delete_object_acl(bucket_name, object_name, gratee_list, permission_list):
+  check_bucket_name(bucket_name)
+  check_bucket_name(object_name)
+  object_acl = AccessControlList()
+  for role in gratee_list:
+    grant = Grant(Grantee(role), Permission(permission_list).get_value())
+    if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
+      grant.type = GrantType.GROUP
+    object_acl.add_grant(grant)
+  fds_client.delete_object_acl(bucket_name, object_name, object_acl)
+
+
+def get_object_acl(bucket_name, object_name):
+  acl = fds_client.get_object_acl(bucket_name=bucket_name, object_name=object_name)
+  sys.stdout.write('ACL:\n')
+  sys.stdout.write('gratee_id\tgrant_type\tpermission\n')
+  for i in acl.get_grant_list():
+    sys.stdout.write(str(i.grantee['id']) + '\t' + str(i.type) + '\t' + str(i.permission.to_string()) + '\n')
 
 
 def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
@@ -548,7 +597,7 @@ def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
   check_object_name(object_name=object_name)
   object_acl = AccessControlList()
   for role in gratee_list:
-    grant = Grant(Grantee(role), Permission(permission).get_value())
+    grant = Grant(Grantee(role), Permission(permission_list).get_value())
     if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
       grant.type = GrantType.GROUP
     object_acl.add_grant(grant)
@@ -558,7 +607,7 @@ def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
 def restore_archived_object(bucket_name, object_name):
   check_bucket_name(bucket_name=bucket_name)
   check_object_name(object_name=object_name)
-  fds_client._restore_archived_object_(bucket_name, object_name)
+  fds_client._restore_archived_object_(bucket_name, object_name, bucket_name, object_name)
   logger.info('restore archived object [%s/%s] success; this may takes several hours', bucket_name, object_name)
 
 def put_bucket_lifecycle_config(bucket_name, lifecycle):
@@ -566,6 +615,14 @@ def put_bucket_lifecycle_config(bucket_name, lifecycle):
   lifecycle = FDSLifecycleConfig(json.loads(lifecycle))
   fds_client.update_lifecycle_config(bucket_name, lifecycle)
   sys.stdout.write("put [%s] lifecycle config success" % bucket_name)
+  sys.stdout.flush()
+
+
+def put_bucket_cors_config(bucket_name, cors):
+  check_bucket_name(bucket_name)
+  cors = FDSCORSConfig(json.loads(cors))
+  fds_client.update_cors_config(bucket_name, cors)
+  sys.stdout.write("put [%s] cors config success" % bucket_name)
   sys.stdout.flush()
 
 
@@ -577,9 +634,23 @@ def put_bucket_lifecycle_rule(bucket_name, lifecycle_rule):
   sys.stdout.flush()
 
 
+def put_bucket_cors_rule(bucket_name, cors_rule):
+  check_bucket_name(bucket_name)
+  rule = FDSCORSRule(json.loads(cors_rule))
+  fds_client.update_cors_rule(bucket_name, rule)
+  sys.stdout.write("put [%s] cors rule success" % bucket_name)
+  sys.stdout.flush()
+
+
 def get_bucket_lifecycle_config(bucket_name):
   lifecycle = fds_client.get_lifecycle_config(bucket_name);
   sys.stdout.write(json.dumps(lifecycle))
+  sys.stdout.flush()
+
+
+def get_bucket_cors_config(bucket_name):
+  cors = fds_client.get_cors_config(bucket_name)
+  sys.stdout.write(json.dumps(cors))
   sys.stdout.flush()
 
 
@@ -716,6 +787,16 @@ def set_bucket_default_webp_quality(bucket_name, webp_quality):
     logger.info("[%s] default webp quality: %d" % (bucket_name, res))
   else:
     logger.info("[%s] is not set convert webp" % bucket_name)
+
+
+def set_bucket_default_gif_extract_type(bucket_name, gif_extract_type):
+  fds_client._set_bucket_default_gif_extract_type_(bucket_name, gif_extract_type)
+  res = fds_client._get_bucket_default_gif_extract_type_(bucket_name)
+  if res == 'unknown':
+    logger.info("[%s] is not set auto gif extract" % (bucket_name))
+  else:
+    logger.info("[%s] default gif extract type: %s" % (bucket_name, res))
+
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__,
@@ -912,6 +993,14 @@ def main():
                       default=None,
                       help='''Put or get lifecycle configof the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
 
+  parser.add_argument('--cors',
+                      nargs='?',
+                      metavar='cors config, json format',
+                      dest='cors',
+                      const=True,
+                      default=None,
+                      help='''Put or get cors config of the bucket. Please use \\" instead of " in this argument when putting cors config due to shell may eat double quotes.''')
+
   parser.add_argument('--lifecycle-rule',
                       nargs='?',
                       metavar='lifecycle rule, json format',
@@ -920,12 +1009,28 @@ def main():
                       default=None,
                       help='''Add/update or get one rule of lifecycle config of the bucket. Please use \\" instead of " in this argument when putting lifecycle config due to shell may eat double quotes.''')
 
+  parser.add_argument('--cors-rule',
+                      nargs='?',
+                      metavar='cors rule, json format',
+                      dest='cors_rule',
+                      const=True,
+                      default=None,
+                      help='''Add/update or get one rule of cors config of the bucket. Please use \\" instead of " in this argument when putting cors config due to shell may eat double quotes.''')
+
+
   parser.add_argument('--webp-quality',
                        nargs='?',
                        dest='webp_quality',
                        const=-1,
                        default=None,
                        help='Integer indicates webp quality, -1 will disable bucket auto convert webp')
+
+  parser.add_argument('--gif-extract-type',
+                      nargs='?',
+                      dest='gif_extract_type',
+                      const='unknown',
+                      default=None,
+                      help='String indicates gif extract type, unknown will disable bucket auto gif extract')
 
   parser.add_argument('--restore-archived',
                       action='store_true',
@@ -1006,7 +1111,7 @@ def main():
   global force_delete
   global disable_trash
   global object_prefix
-  global recursive, webp_quality
+  global recursive, webp_quality, gif_extract_type
 
   try:
     if presigned_url:
@@ -1063,8 +1168,14 @@ def main():
           put_bucket_lifecycle_config(bucket_name, lifecycle)
         elif lifecycle_rule:
           put_bucket_lifecycle_rule(bucket_name, lifecycle_rule)
+        elif cors:
+          put_bucket_cors_config(bucket_name, cors)
+        elif cors_rule:
+          put_bucket_cors_rule(bucket_name, cors_rule)
         elif webp_quality:
           set_bucket_default_webp_quality(bucket_name=bucket_name, webp_quality=webp_quality)
+        elif gif_extract_type:
+          set_bucket_default_gif_extract_type(bucket_name=bucket_name, gif_extract_type=gif_extract_type)
         else:
           put_bucket(bucket_name)
         pass
@@ -1079,9 +1190,12 @@ def main():
                      metadata=metadata,
                      offset=offset,
                      length=length,
-                     webp_quality=webp_quality)
+                     webp_quality=webp_quality,
+                     gif_extract_type=gif_extract_type)
         elif lifecycle:
           get_bucket_lifecycle_config(bucket_name)
+        elif cors:
+          get_bucket_cors_config(bucket_name)
         else:
           get_bucket_acl(bucket_name=bucket_name)
         pass
@@ -1092,9 +1206,12 @@ def main():
         pass
       elif method == 'delete':
         if object_name:
-          delete_object(bucket_name=bucket_name,
-                        object_name=object_name,
-                        enable_trash=not disable_trash)
+          if gratee and permission:
+            delete_object_acl(bucket_name, object_name, gratee, permission)
+          else:
+            delete_object(bucket_name=bucket_name,
+                          object_name=object_name,
+                          enable_trash=not disable_trash)
         elif object_prefix is not None:
           delete_objects(bucket_name=bucket_name,
                          object_prefix=object_prefix,
@@ -1102,7 +1219,10 @@ def main():
         elif force_delete:
           delete_bucket_and_objects(bucket_name=bucket_name)
         else:
-          delete_bucket(bucket_name=bucket_name)
+          if gratee and permission:
+            delete_bucket_acl(bucket_name, gratee, permission)
+          else:
+            delete_bucket(bucket_name=bucket_name)
         pass
       elif method == 'head':
         if object_name:

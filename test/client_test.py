@@ -31,6 +31,7 @@ from fds.model.permission import Grant
 from fds.model.permission import Grantee
 from fds.model.upload_part_result_list import UploadPartResultList
 from fds.model.fds_lifecycle import *
+from fds.model.fds_cors import FDSCORSConfig,FDSCORSRule
 import json
 
 from datetime import datetime
@@ -441,6 +442,32 @@ class ClientTest(unittest.TestCase):
     self.assertEqual("3", rule.id)
     print(self.client.get_lifecycle_config(self.bucket_name))
 
+
+  def test_cors_config(self):
+    rule1=FDSCORSRule()
+    rule1.id="1"
+    rule1.allowOrigin='*'
+    rule2=FDSCORSRule()
+    rule2.id="2"
+    rule2.allowOrigin='*.example.com'
+    cors_config=FDSCORSConfig()
+    cors_config.rules.append(rule1)
+    cors_config.rules.append(rule2)
+    self.client.update_cors_config(self.bucket_name,cors_config)
+    print(json.dumps(self.client.get_cors_config(self.bucket_name)))
+    cors_config=self.client.get_cors_config(self.bucket_name)
+    self.assertIsNotNone(cors_config.get_rule_by_id("1"))
+    self.assertIsNotNone(cors_config.get_rule_by_id("2"))
+
+    rule3=FDSCORSRule()
+    rule3.allowOrigin="https://cloud.d.xiaomi.net"
+    self.client.update_cors_rule(self.bucket_name,rule3)
+    rule = self.client.get_cors_config(self.bucket_name, "3")
+    self.assertEqual("3", rule.id)
+    self.assertEqual(rule.allowOrigin, rule3.allowOrigin)
+    print(self.client.get_cors_config(self.bucket_name))
+
+
   def test_get_and_delete_version(self):
     print("")
     object_name = "test_get_and_delete_version"
@@ -495,3 +522,4 @@ class ClientTest(unittest.TestCase):
               f.write(chunk)
     finally:
       ClientTest.delete_objects_and_bucket(self.client, bucket_name)
+

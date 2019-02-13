@@ -35,8 +35,11 @@ from fds.model.subresource import SubResource
 from fds.model.init_multipart_upload_result import InitMultipartUploadResult
 from fds.model.upload_part_result import UploadPartResult
 from fds.model.fds_lifecycle import FDSLifecycleConfig, FDSLifecycleRule
+from fds.model.fds_cors import FDSCORSConfig, FDSCORSRule
 from fds.model.copy_object_result import CopyObjectResult
 from fds.model.timestamp_anti_stealing_link_config import TimestampAntiStealingLinkConfig
+from fds.model.list_domain_mappings_result import ListDomainMappingsResult
+from fds.model.fds_access_log_config import AccessLogConfig
 import os
 import sys
 from .utils import uri_to_bucket_and_object, to_json_object
@@ -622,7 +625,7 @@ class GalaxyFDSClient(object):
       headers = ""
       if self._config.debug:
         headers = ' header=%s' % response.headers
-      message = 'Restore object failed, status=%s, reason=%s%s' % (
+      message = 'Delete objects failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
     else:
@@ -662,6 +665,100 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
+  def put_domain_mapping(self, bucket_name, domain_name, index_name='index.html'):
+    '''
+    Put bucket domain mapping
+    :param bucket_name: The name of the bucket
+    :param domain_name: The name of domain to put
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.put(uri, auth=self._auth, params={'domain': domain_name, 'index': index_name})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Put bucket domain mapping failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def delete_domain_mapping(self, bucket_name, domain_name):
+    '''
+    Delete bucket domain mapping
+    :param bucket_name: The name of bucket
+    :param domain_name: The name of domain to delete
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.delete(uri, auth=self._auth, params={'domain': domain_name})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      messgae = 'Delete bucket domain mapping failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(messgae)
+
+  def list_domain_mappins(self, bucket_name):
+    '''
+    List bucket domain mappings
+    :param bucket_name: The name of bucket
+    :return:            The list domain mappings
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.get(uri, auth=self._auth, params={'domain': 'true'})
+    if response.status_code == requests.codes.ok:
+      list_domain_mappings_result = ListDomainMappingsResult(to_json_object(response.content))
+      return list_domain_mappings_result.domain_mappings
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'List bucket domain mappings failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def crop_image(self, bucket_name, object_name, x, y, w, h):
+    '''
+    Crop image
+    :param bucket_name:The name of bucket
+    :param object_name: The name of object
+    '''
+    uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
+    response = self._request.put(uri, auth=self._auth, params={'cropImage': 'true', 'x': x, 'y': y, 'w': w, 'h': h})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'crop image failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def get_access_log_config(self, bucket_name):
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.get(uri, auth=self._auth, params={'accessLog': 'true'})
+    if response.status_code == requests.codes.ok:
+      access_log_config = AccessLogConfig(to_json_object(response.content))
+      return access_log_config
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'get access log config failed, status=%s, reason=%s%s' % (
+      response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def update_access_log_config(self, bucket_name, access_log_config):
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.put(uri, auth=self._auth,
+                                 data=json.dumps(access_log_config, default=lambda x: x.to_string()),
+                                 params={'accessLog': 'true'})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'crop image failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
   def set_bucket_acl(self, bucket_name, acl):
     '''
     Add grant(ACL) for specified bucket.
@@ -698,6 +795,44 @@ class GalaxyFDSClient(object):
       if self._config.debug:
         headers = ' header=%s' % response.headers
       message = 'Get bucket acl failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def delete_bucket_acl(self, bucket_name, acl):
+    '''
+    Delete grant(ACL) for specified bucket.
+    :param bucket_name: The name of the bucket to delete grant
+    :param acl:         The grant(ACL) to delete
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    acp = self._acl_to_acp(acl)
+    response = self._request.put(uri, auth=self._auth, data=json.dumps(acp, default=lambda x: x.to_string()), params={
+      "acl": "true",
+      "action": "delete"})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Delete bucket acl failed,status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def delete_object_acl(self, bucket_name, object_name, acl):
+    '''
+    Delete grant(ACL)for a specified object.
+    :param bucket_name: The name of the bucket
+    :param object_name: The name of the object
+    :param acl:         The grant(ACL) to delete
+    '''
+    uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
+    acp = self._acl_to_acp(acl)
+    response = self._request.put(uri, auth=self._auth, params={'acl': 'true', 'action': "delete"},
+                                 data=json.dumps(acp, default=lambda x: x.to_string()))
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = 'header=%s' % response.headers
+      message = 'Delete object acl failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
@@ -801,6 +936,13 @@ class GalaxyFDSClient(object):
     grant.type = GrantType.GROUP
     acl.add_grant(grant)
     self.set_object_acl(bucket_name, object_name, acl)
+
+  def set_public(self, bucket_name):
+    acl = AccessControlList()
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ_OBJECTS)
+    grant.type = GrantType.GROUP
+    acl.add_grant(grant)
+    self.set_bucket_acl(bucket_name, acl)
 
   def init_multipart_upload(self, bucket_name, object_name):
     '''
@@ -1165,6 +1307,67 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
+  def update_cors_config(self, bucket_name, cors_config):
+    '''
+    Update cors config of a bucket which determine by the config
+    :param bucket_name:
+    :param cors_config:
+    :return:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.put(uri, auth=self._auth, params={"cors": "true"},
+                                 data=json.dumps(cors_config))
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Update bucket cors config failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def update_cors_rule(self, bucket_name, rule):
+    '''
+    Update a cors rule of specified bucket
+    :param rule: If rule.id is None or not exists in bucket.cors_config, add rule with a generated ID. Otherwise bucket.cors_config[rule.id] will be updated
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.put(uri,
+                                 auth=self._auth,
+                                 params={"cors": "rule"},
+                                 data=json.dumps(rule))
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Update bucket cors rule failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def get_cors_config(self, bucket_name, rule_id=None):
+    '''
+    Get cors config of specified bucket
+    :param bucket_name:
+    :param rule_id: if rule_id is None, return cors_config of the bucket; otherwise return bucket.cors_config[rule_id], if the rule exists
+    :return:
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.get(uri, auth=self._auth,
+                                 params={"cors": rule_id and rule_id or ""})
+    if response.status_code == requests.codes.ok:
+      print(response.content)
+      js = to_json_object(response.content)
+      if rule_id:
+        return FDSCORSRule(js)
+      else:
+        return FDSCORSConfig(js)
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get bucket cors config failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
   def _set_bucket_default_webp_quality_(self, bucket_name, quality):
     '''
     Enable bucket auto convert webp.
@@ -1204,7 +1407,7 @@ class GalaxyFDSClient(object):
       headers = ""
       if self._config.debug:
         headers = ' header=%s' % response.headers
-      message = 'Check object existence failed, status=%s, reason=%s%s' % (
+      message = 'Get bucket default webp quality failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
@@ -1240,6 +1443,76 @@ class GalaxyFDSClient(object):
       if self._config.debug:
         headers = ' header=%s' % response.headers
       message = 'Get webp failed, status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _set_bucket_default_gif_extract_type_(self, bucket_name, mime_type):
+    '''
+    Enable bucket auto gif extract.
+    :param bucket_name:     The name of the bucket
+    :param mime_type:         Default gif extract type, unknown means disable auto gif extract
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.put(uri, auth=self._auth, params={"gifType": mime_type})
+    if response.status_code != requests.codes.ok:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Enable bucket auto gif extract failed,status=%s, reason=%s%s' % (
+        response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _get_extracted_gif_(self, bucket_name, object_name, type, stream=None):
+    '''
+    Get gif extracted frame of a specified
+    :param bucket_name: The name of the bucket from whom to get the object
+    :param object_name: The name of the object to get
+    :param stream:      Set True to enable streaming, otherwise, whole object content is read to memory
+    :param type: The FDS object
+    :return:
+    '''
+    uri = '%s%s/%s' % (self._config.get_download_base_uri(), quote(bucket_name), quote(object_name))
+    params = {"gf": type}
+    response = self._request.get(uri, auth=self._auth, stream=stream, params=params)
+
+    if response.status_code == requests.codes.ok or response.status_code == requests.codes.partial:
+      obj = FDSObject()
+      obj.stream = response.iter_content()
+      summary = FDSObjectSummary()
+      summary.bucket_name = bucket_name
+      summary.object_name = object_name
+      summary.size = int(response.headers['content-length'])
+      obj.summary = summary
+      obj.metadata = self._parse_object_metadata_from_headers(response.headers)
+      return obj
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get extracted gif failed, status=%s, reason=%s%s' % (
+      response.status_code, response.content, headers)
+      raise GalaxyFDSClientException(message)
+
+  def _get_bucket_default_gif_extract_type_(self, bucket_name):
+    '''
+    Check the existence of a specified bucket.
+    :param bucket_name: The name of the bucket
+    :return: Type if the bucket can auto gif extract, otherwise, unknown
+    '''
+    uri = '%s%s' % (self._config.get_base_uri(), quote(bucket_name))
+    response = self._request.get(uri, auth=self._auth, params={"gifType": "true"})
+    if response.status_code == requests.codes.ok:
+      content = response.content
+      if IS_PY3:
+        content = content.decode("UTF-8")
+      return content
+    elif response.status_code == requests.codes.not_found:
+      return False
+    else:
+      headers = ""
+      if self._config.debug:
+        headers = ' header=%s' % response.headers
+      message = 'Get bucket default gif extract type failed, status=%s, reason=%s%s' % (
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
@@ -1318,17 +1591,17 @@ class GalaxyFDSClient(object):
         resp.status_code, resp.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def _restore_archived_object_(self, bucket_name, object_name):
+  def _restore_archived_object_(self, src_bucket_name, src_object_name, dst_bucket_name, dst_object_name):
       '''
       Restore archived object as standard.
       If the object is ongoing restore, or not archived, raise exception
       :param bucket_name:     The name of the bucket
       :param object_name:     The name of the object
       '''
-      uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
-      response = self._request.put(uri,
-                                   auth=self._auth,
-                                   params={"restoreArchived": "true"})
+      uri = '%s%s/%s' % (self._config.get_base_uri(), quote(src_bucket_name), quote(src_object_name))
+      response = self._request.put(uri, auth=self._auth,
+        params={"restoreArchive": "true"},
+        data=("%s/%s" % (dst_bucket_name, dst_object_name)))
       if response.status_code != requests.codes.ok:
           headers = ""
           if self._config.debug:
