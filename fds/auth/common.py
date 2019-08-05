@@ -28,6 +28,8 @@ class Common(object):
   PREVIOUS_VERSION_ID = "pre-version-id"
   SERVER_SIDE_ENCRYPTION = XIAOMI_HEADER_PREFIX + "server-side-encryption"
   STORAGE_CLASS = XIAOMI_HEADER_PREFIX + "storage-class"
+  ONGOING_RESTORE = XIAOMI_HEADER_PREFIX + "ongoing-restore"
+  RESTORE_EXPIRY_DATE = XIAOMI_HEADER_PREFIX + "restore-expiry";
 
   DEFAULT_FDS_SERVICE_BASE_URI = "http://files.fds.api.xiaomi.com/"
   DEFAULT_CDN_SERVICE_URI = "http://cdn.fds.api.xiaomi.com/"

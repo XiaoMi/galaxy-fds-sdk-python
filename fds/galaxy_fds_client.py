@@ -40,6 +40,7 @@ from fds.model.copy_object_result import CopyObjectResult
 from fds.model.timestamp_anti_stealing_link_config import TimestampAntiStealingLinkConfig
 from fds.model.list_domain_mappings_result import ListDomainMappingsResult
 from fds.model.fds_access_log_config import AccessLogConfig
+from fds.model.fds_storage_class import FDSStorageClass
 import os
 import sys
 from .utils import uri_to_bucket_and_object, to_json_object
@@ -237,7 +238,7 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def list_objects(self, bucket_name, prefix='', delimiter=None, max_keys=None):
+  def list_objects(self, bucket_name, prefix='', delimiter=None, max_keys=None, is_archive=False):
     '''
     List all objects in a specified bucket with prefix. If the number of objects
     in the bucket is larger than a threshold, you would get a FDSObjectListing
@@ -246,6 +247,7 @@ class GalaxyFDSClient(object):
     :param bucket_name: The name of the bucket to whom the object is put
     :param prefix:      The prefix of the object to list
     :param delimiter:   The delimiter used in listing, using '/' if 'None' given
+    :param is_archive:  List archives if true
     :return:  FDSObjectListing contains FDSObject list and other metadata
     '''
     if delimiter is None:
@@ -257,6 +259,8 @@ class GalaxyFDSClient(object):
     }
     if max_keys is not None:
       params["maxKeys"] = str(max_keys)
+    if is_archive:
+      params["archive"] = "true"
     response = self._request.get(uri, auth=self._auth, params=params)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(to_json_object(response.content))
@@ -279,7 +283,7 @@ class GalaxyFDSClient(object):
     '''
     return self.list_objects("trash", prefix, delimiter, max_keys=max_keys);
 
-  def list_next_batch_of_objects(self, previous):
+  def list_next_batch_of_objects(self, previous, is_archive=False):
     '''
     List objects in a iterative manner
     :param previous: The FDSObjectListing returned by previous call or list_objects
@@ -293,12 +297,17 @@ class GalaxyFDSClient(object):
     delimiter = previous.delimiter
     marker = previous.next_marker
     uri = "%s%s" % (self._config.get_base_uri(), quote(bucket_name))
-    response = self._request.get(uri, auth=self._auth, params={
+
+    params = {
       'prefix': previous.prefix,
       'delimiter': previous.delimiter,
       'marker': previous.next_marker,
       'maxKeys': previous.max_keys
-    })
+    }
+
+    if is_archive:
+      params['archive'] = 'true'
+    response = self._request.get(uri, auth=self._auth, params=params)
     if response.status_code == requests.codes.ok:
       objects_list = FDSObjectListing(to_json_object(response.content))
       return objects_list
@@ -323,7 +332,7 @@ class GalaxyFDSClient(object):
     bucket_name, object_name = uri_to_bucket_and_object(uri)
     self.put_object(bucket_name, object_name, data, metadata)
 
-  def put_object(self, bucket_name, object_name, data, metadata=None):
+  def put_object(self, bucket_name, object_name, data, metadata=None, is_archive=False):
     '''
     Put the object to a specified bucket. If a object with the same name already
     existed, it will be overwritten.
@@ -331,6 +340,7 @@ class GalaxyFDSClient(object):
     :param object_name: The name of the object to put
     :param data:        The data to put, bytes or a file like object
     :param metadata:    The metadata of the object
+    :param is_archive:  Put as archived object if true
     :return: The result of putting action server returns
     '''
     part_size = self._config.get_part_size()
@@ -363,24 +373,31 @@ class GalaxyFDSClient(object):
     filen = inputstream.tell()
     inputstream.seek(0, pos)
     if filen < threshold_size:
-      return self.put_object_directly(bucket_name, object_name, inputstream, metadata)
+      return self.put_object_directly(bucket_name, object_name, inputstream, metadata, is_archive=is_archive)
     else:
       content = inputstream.read(part_size)
-      upload_token = self.init_multipart_upload(bucket_name, object_name)
+      upload_token = self.init_multipart_upload(bucket_name, object_name, metadata, is_archive=is_archive)
       upload_list = []
       part_number = 1
       while (content):
 
         upload_result = None
+        upload_success_flag = False
+        last_exception = None
         for i in range(3):
           try:
             upload_result = self.upload_part(bucket_name, object_name, upload_token.upload_id,
                                              part_number, content)
             upload_list.append(upload_result)
+            upload_success_flag = True
             break
-          except:
+          except Exception as e:
+            last_exception = e
             logging.warning("upload part %d failed, retry after %d seconds" % (part_number, 3))
             sleep(3)
+        if not upload_success_flag:
+          logging.error("upload failed, bucket: %s, object: %s, upload part: %d" % (bucket_name, object_name, part_number))
+          raise last_exception
 
         part_number = part_number + 1
         content = inputstream.read(part_size)
@@ -390,7 +407,7 @@ class GalaxyFDSClient(object):
                                             metadata=metadata,
                                             upload_part_result_list=json.dumps(upload_part_result))
 
-  def put_object_directly(self, bucket_name, object_name, data, metadata=None):
+  def put_object_directly(self, bucket_name, object_name, data, metadata=None, is_archive=False):
     '''
     Put the object to a specified bucket. If a object with the same name already
     existed, it will be overwritten.
@@ -398,11 +415,14 @@ class GalaxyFDSClient(object):
     :param object_name: The name of the object to put
     :param data:        The data to put, bytes or a file like object
     :param metadata:    The metadata of the object
+    :param is_archive:  Put as archived object if true
     :return: The result of putting action server returns
     '''
     uri = '%s%s/%s' % (self._config.get_upload_base_uri(), quote(bucket_name), quote(object_name))
     if metadata is None:
       metadata = FDSObjectMetadata()
+    if is_archive:
+      metadata.add_header(Common.STORAGE_CLASS, FDSStorageClass.Archive.value)
     inputstream = None
     if isinstance(data, bytes):
       inputstream = BytesIO(data)
@@ -491,7 +511,7 @@ class GalaxyFDSClient(object):
     return self.get_object(bucket_name, object_name, position, size)
 
   def get_object(self, bucket_name, object_name, position=0, size=4096, stream=None,
-                 version_id=None):
+                 version_id=None, is_archive=False):
     '''
     Get a specified object from a bucket.
     :param bucket_name: The name of the bucket from whom to get the object
@@ -499,6 +519,7 @@ class GalaxyFDSClient(object):
     :param position: The start index of object to get
     :param size:        The maximum size of each piece when return streaming is on
     :param stream:      Set True to enable streaming, otherwise, whole object content is read to memory
+    :param is_archive:  Get archive object if true
     :return: The FDS object
     '''
     if position < 0:
@@ -507,6 +528,9 @@ class GalaxyFDSClient(object):
     req_params = dict()
     if version_id:
       req_params["versionId"] = version_id
+
+    if is_archive:
+      req_params["archive"] = "true"
 
     if position > 0:
       header = {Common.RANGE: 'bytes=%d-' % position}
@@ -596,7 +620,9 @@ class GalaxyFDSClient(object):
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
     params = {}
-    if "enable_trash" in kwargs and kwargs["enable_trash"] is False:
+    if "is_archive" in kwargs and kwargs["is_archive"] is True:
+      params["archive"] = "true"
+    elif "enable_trash" in kwargs and kwargs["enable_trash"] is False:
       params["enableTrash"] = "false"
 
     response = self._request.delete(uri, auth=self._auth, params=params)
@@ -817,16 +843,20 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def delete_object_acl(self, bucket_name, object_name, acl):
+  def delete_object_acl(self, bucket_name, object_name, acl, is_archive=False):
     '''
     Delete grant(ACL)for a specified object.
     :param bucket_name: The name of the bucket
     :param object_name: The name of the object
     :param acl:         The grant(ACL) to delete
+    :param is_archive:  If true, put ACL of archive object
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
     acp = self._acl_to_acp(acl)
-    response = self._request.put(uri, auth=self._auth, params={'acl': 'true', 'action': "delete"},
+    params = {'acl': 'true', 'action': "delete"}
+    if is_archive:
+      params["archive"] = "true"
+    response = self._request.put(uri, auth=self._auth, params=params,
                                  data=json.dumps(acp, default=lambda x: x.to_string()))
     if response.status_code != requests.codes.ok:
       headers = ""
@@ -836,16 +866,20 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def set_object_acl(self, bucket_name, object_name, acl):
+  def set_object_acl(self, bucket_name, object_name, acl, is_archive=False):
     '''
     Add grant(ACL) for a specified object.
     :param bucket_name: The name of the bucket
     :param object_name: The name of the object
     :param acl:         The grant(ACL) to add
+    :param is_archive:  If true, put ACL of archive object
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
     acp = self._acl_to_acp(acl)
-    response = self._request.put(uri, auth=self._auth, params={SubResource.ACL: 'true'},
+    params = {SubResource.ACL: 'true'}
+    if is_archive:
+      params['archive'] = "true"
+    response = self._request.put(uri, auth=self._auth, params=params,
                                  data=json.dumps(acp, default=lambda x: x.to_string()))
     if response.status_code != requests.codes.ok:
       headers = ""
@@ -855,15 +889,20 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def get_object_acl(self, bucket_name, object_name):
+  def get_object_acl(self, bucket_name, object_name, is_archive=False):
     '''
     Get the ACL of a specified object.
     :param bucket_name: The name of the bucket
     :param object_name: The name of the object
+    :param is_archive:  If true, put ACL of archive object
     :return: The got access control list
     '''
     uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
-    response = self._request.get(uri, auth=self._auth, params={SubResource.ACL: 'true'})
+
+    params = {SubResource.ACL: 'true'}
+    if is_archive:
+      params["archive"] = "true"
+    response = self._request.get(uri, auth=self._auth, params=params)
     if response.status_code == requests.codes.ok:
       acp = AccessControlPolicy(to_json_object(response.content))
       acl = self._acp_to_acl(acp)
@@ -930,29 +969,66 @@ class GalaxyFDSClient(object):
         response.status_code, response.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def set_public(self, bucket_name, object_name):
+  def set_public(self, bucket_name, object_name=None, is_archive=False):
+    """
+    Make resource public, if object_name is not being set, this method will set the bucket_name to public resource,
+    if object_name is set, this method will set object_name to public resource
+    :param bucket_name:
+    :param object_name:
+    :return:
+    """
+    if object_name is None:
+      self._set_bucket_public(bucket_name)
+    else:
+      self._set_object_public(bucket_name, object_name, is_archive=is_archive)
+
+  def _set_object_public(self, bucket_name, object_name, is_archive=False):
     acl = AccessControlList()
     grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
     grant.type = GrantType.GROUP
     acl.add_grant(grant)
-    self.set_object_acl(bucket_name, object_name, acl)
+    self.set_object_acl(bucket_name, object_name, acl, is_archive=is_archive)
 
-  def set_public(self, bucket_name):
+  def _set_bucket_public(self, bucket_name):
     acl = AccessControlList()
     grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ_OBJECTS)
     grant.type = GrantType.GROUP
     acl.add_grant(grant)
     self.set_bucket_acl(bucket_name, acl)
 
-  def init_multipart_upload(self, bucket_name, object_name):
+  def set_private(self, bucket_name, object_name=None, is_archive=False):
+    if object_name is None:
+      self._set_bucket_private(bucket_name)
+    else:
+      self._set_object_private(bucket_name, object_name, is_archive)
+
+  def _set_bucket_private(self, bucket_name):
+    acl = AccessControlList()
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ_OBJECTS)
+    grant.type = GrantType.GROUP
+    acl.add_grant(grant)
+    self.delete_bucket_acl(bucket_name, acl)
+
+  def _set_object_private(self, bucket_name, object_name, is_archive=False):
+    acl = AccessControlList()
+    grant = Grant(Grantee(UserGroups.ALL_USERS), Permission.READ)
+    grant.type = GrantType.GROUP
+    acl.add_grant(grant)
+    self.delete_object_acl(bucket_name, object_name, acl, is_archive)
+
+  def init_multipart_upload(self, bucket_name, object_name, metadata=None, is_archive=False):
     '''
     Init a multipart upload session
     :param bucket_name:
     :param object_name:
     :return:
     '''
+    if not metadata:
+      metadata = FDSObjectMetadata()
+    if is_archive:
+      metadata.add_header(Common.STORAGE_CLASS, FDSStorageClass.Archive.value)
     uri = '%s%s/%s' % (self._config.get_base_uri(), quote(bucket_name), quote(object_name))
-    response = self._request.put(uri, auth=self._auth, data="", params={"uploads": 'true'})
+    response = self._request.put(uri, auth=self._auth, data="", params={"uploads": 'true'}, headers=metadata.metadata)
     if response.status_code == requests.codes.ok:
       result = InitMultipartUploadResult(to_json_object(response.content))
       return result
@@ -1170,7 +1246,7 @@ class GalaxyFDSClient(object):
         metadata.add_user_metadata(key, response_headers[key])
     return metadata
 
-  def list_all_objects(self, bucket_name, prefix='', delimiter=None):
+  def list_all_objects(self, bucket_name, prefix='', delimiter=None, is_archive=False):
     '''
     traverse all objects in the bucket
     :param bucket_name:
@@ -1178,12 +1254,12 @@ class GalaxyFDSClient(object):
     :param delimiter:
     :return:
     '''
-    result = self.list_objects(bucket_name, prefix, delimiter)
+    result = self.list_objects(bucket_name, prefix, delimiter, is_archive=is_archive)
     while True:
       for object_summary in result.objects:
         yield object_summary
       if result.is_truncated:
-        result = self.list_next_batch_of_objects(result)
+        result = self.list_next_batch_of_objects(result, is_archive=is_archive)
       else:
         break
 
@@ -1591,17 +1667,16 @@ class GalaxyFDSClient(object):
         resp.status_code, resp.content, headers)
       raise GalaxyFDSClientException(message)
 
-  def _restore_archived_object_(self, src_bucket_name, src_object_name, dst_bucket_name, dst_object_name):
+  def _restore_archived_object_(self, src_bucket_name, src_object_name):
       '''
-      Restore archived object as standard.
-      If the object is ongoing restore, or not archived, raise exception
+      Restore archived object
+      If object is restored, extend expiration time of the copy
       :param bucket_name:     The name of the bucket
       :param object_name:     The name of the object
       '''
       uri = '%s%s/%s' % (self._config.get_base_uri(), quote(src_bucket_name), quote(src_object_name))
       response = self._request.put(uri, auth=self._auth,
-        params={"restoreArchive": "true"},
-        data=("%s/%s" % (dst_bucket_name, dst_object_name)))
+        params={"restoreArchive": "true"})
       if response.status_code != requests.codes.ok:
           headers = ""
           if self._config.debug:

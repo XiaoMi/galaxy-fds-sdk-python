@@ -85,6 +85,7 @@ disable_trash = False
 object_prefix = None
 gratee = None
 permission = None
+is_public = False
 lifecycle = None
 lifecycle_rule = None
 cors=None
@@ -92,7 +93,9 @@ cors_rule=None
 recursive = False
 webp_quality = None
 gif_extract_type = None
-restore_archived = False
+restore_archive = False
+is_archive = False
+list_trash = False
 
 expiration_in_hour = '1.0'
 multipart_upload_threshold_size = 50 * 1024 * 1024
@@ -129,7 +132,7 @@ def parse_argument(args):
     access_key, secret_key, end_point, presigned_url, expiration_in_hour, \
     force_delete, gratee, permission, disable_trash, object_prefix, lifecycle, lifecycle_rule, \
     recursive, dst_bucket_name, dst_object_name, src_bucket_name, src_object_name, webp_quality, gif_extract_type, cors, cors_rule,\
-    restore_archived
+    restore_archive, is_archive, list_trash, is_public
   local_config = read_local_config()
   method = args.method
   print_config('method', method)
@@ -197,8 +200,14 @@ def parse_argument(args):
   gif_extract_type = args.gif_extract_type
   print_config('gif_extract_type', gif_extract_type)
 
-  restore_archived = args.restore_archived
-  print_config('restore archived object', restore_archived)
+  restore_archive = args.restore_archive
+  print_config('restore archived object', restore_archive)
+
+  is_archive = args.is_archive
+  print_config('is_archive', is_archive)
+
+  list_trash = args.list_trash
+  print_config('list_trash', list_trash)
 
   if args.ak:
     access_key = args.ak
@@ -235,6 +244,8 @@ def parse_argument(args):
   print_config('gratee', gratee)
   permission = args.permission
   print_config('permission', permission)
+  is_public = args.is_public
+  print_config('is_public', is_public)
 
   src_bucket_name = args.src_bucket_name
   print_config('src_bucket_name', src_bucket_name)
@@ -341,7 +352,7 @@ def put_directory(data_dir, bucket_name, object_name_prefix, metadata):
                  metadata=metadata)
 
 
-def put_object(data_file, bucket_name, object_name, metadata):
+def put_object(data_file, bucket_name, object_name, metadata, is_archive=False):
   check_bucket_name(bucket_name)
   check_object_name(object_name)
   check_metadata(metadata)
@@ -351,9 +362,9 @@ def put_object(data_file, bucket_name, object_name, metadata):
   result = None
   if data_file:
     with open(data_file, "rb") as f:
-      result = fds_client.put_object(bucket_name, object_name, f, fds_metadata)
+      result = fds_client.put_object(bucket_name, object_name, f, fds_metadata, is_archive=is_archive)
   else:
-    result = fds_client.put_object(bucket_name, object_name, sys.stdin, fds_metadata)
+    result = fds_client.put_object(bucket_name, object_name, sys.stdin, fds_metadata, is_archive=is_archive)
   logger.debug("Upload object success")
 
   if result:
@@ -429,7 +440,8 @@ def parse_metadata_from_str(metadata):
   return fds_metadata
 
 
-def get_object(data_file, bucket_name, object_name, metadata, offset, length, webp_quality=False, gif_extract_type=False):
+def get_object(data_file, bucket_name, object_name, metadata, offset, length,
+    webp_quality=False, gif_extract_type=False, is_archive=False):
   check_bucket_name(bucket_name)
   check_object_name(object_name)
   if webp_quality:
@@ -448,7 +460,8 @@ def get_object(data_file, bucket_name, object_name, metadata, offset, length, we
     fds_object = fds_client.get_object(bucket_name=bucket_name,
                                        object_name=object_name,
                                        position=offset,
-                                       stream=True)
+                                       stream=True,
+                                       is_archive=is_archive)
 
   length_left = length
   if length_left == -1:
@@ -572,7 +585,7 @@ def delete_bucket_acl(bucket_name, gratee_list, permission_list):
   fds_client.delete_bucket_acl(bucket_name=bucket_name, acl=bucketAcl)
 
 
-def delete_object_acl(bucket_name, object_name, gratee_list, permission_list):
+def delete_object_acl(bucket_name, object_name, gratee_list, permission_list, is_archive=False):
   check_bucket_name(bucket_name)
   check_bucket_name(object_name)
   object_acl = AccessControlList()
@@ -581,18 +594,18 @@ def delete_object_acl(bucket_name, object_name, gratee_list, permission_list):
     if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
       grant.type = GrantType.GROUP
     object_acl.add_grant(grant)
-  fds_client.delete_object_acl(bucket_name, object_name, object_acl)
+  fds_client.delete_object_acl(bucket_name, object_name, object_acl, is_archive=is_archive)
 
 
-def get_object_acl(bucket_name, object_name):
-  acl = fds_client.get_object_acl(bucket_name=bucket_name, object_name=object_name)
+def get_object_acl(bucket_name, object_name, is_archive=False):
+  acl = fds_client.get_object_acl(bucket_name=bucket_name, object_name=object_name, is_archive=is_archive)
   sys.stdout.write('ACL:\n')
   sys.stdout.write('gratee_id\tgrant_type\tpermission\n')
   for i in acl.get_grant_list():
     sys.stdout.write(str(i.grantee['id']) + '\t' + str(i.type) + '\t' + str(i.permission.to_string()) + '\n')
 
 
-def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
+def put_object_acl(bucket_name, object_name, gratee_list, permission_list, is_archive=False):
   check_bucket_name(bucket_name=bucket_name)
   check_object_name(object_name=object_name)
   object_acl = AccessControlList()
@@ -601,13 +614,25 @@ def put_object_acl(bucket_name, object_name, gratee_list, permission_list):
     if role in [UserGroups.ALL_USERS, UserGroups.AUTHENTICATED_USERS]:
       grant.type = GrantType.GROUP
     object_acl.add_grant(grant)
-  fds_client.set_object_acl(bucket_name, object_name, object_acl)
+  fds_client.set_object_acl(bucket_name, object_name, object_acl, is_archive=is_archive)
   logger.info('set [%s/%s] acl success', bucket_name, object_name)
+
+def set_public(bucket_name, object_name=None, is_archive=False):
+  check_bucket_name(bucket_name)
+  fds_client.set_public(bucket_name, object_name=object_name, is_archive=is_archive)
+  if object_name:
+    if is_archive:
+      sys.stdout.write('set archive %s/%s public success' % (bucket_name, object_name))
+    else:
+      sys.stdout.write('set object %s/%s public success' % (bucket_name, object_name))
+  else:
+    sys.stdout.write('set bucket %s public success' % bucket_name)
+  sys.stdout.flush()
 
 def restore_archived_object(bucket_name, object_name):
   check_bucket_name(bucket_name=bucket_name)
   check_object_name(object_name=object_name)
-  fds_client._restore_archived_object_(bucket_name, object_name, bucket_name, object_name)
+  fds_client._restore_archived_object_(bucket_name, object_name)
   logger.info('restore archived object [%s/%s] success; this may takes several hours', bucket_name, object_name)
 
 def put_bucket_lifecycle_config(bucket_name, lifecycle):
@@ -684,6 +709,8 @@ def delete_bucket_and_objects(bucket_name):
   if fds_client.does_bucket_exist(bucket_name):
     for obj in fds_client.list_all_objects(bucket_name, prefix="", delimiter=""):
       fds_client.delete_object(bucket_name, obj.object_name)
+    for obj in fds_client.list_all_objects(bucket_name, prefix="", delimiter="", is_archive=True):
+      fds_client.delete_object(bucket_name, obj.object_name, is_archive=True)
     fds_client.delete_bucket(bucket_name)
     logger.info('delete bucket and objects success')
   else:
@@ -733,11 +760,26 @@ def list_directory(bucket_name, object_name_prefix, start_mark):
       break
     list_result = fds_client.list_next_batch_of_objects(list_result)
 
+def list_bucket_trash(bucket_name=None):
+  prefix = bucket_name and bucket_name + "/" or ""
 
-def list_object(bucket_name, object_name_prefix, start_mark=''):
+  list_result = fds_client.list_trash_objects(prefix=prefix, delimiter="")
+
+  for i in list_result.common_prefixes:
+    sys.stdout.write(i)
+    sys.stdout.write('\n')
+  for i in list_result.objects:
+    sys.stdout.write(i.object_name)
+    sys.stdout.write('\n')
+  sys.stdout.flush()
+  if list_result.is_truncated:
+    sys.stdout.write('...\n')
+
+def list_object(bucket_name, object_name_prefix, start_mark='', is_archive=False):
   list_result = fds_client.list_objects(bucket_name=bucket_name,
                                         prefix=object_name_prefix,
-                                        delimiter='')
+                                        delimiter='',
+                                        is_archive=is_archive)
   if start_mark:
     list_result.is_truncated = True
     list_result.next_marker = bucket_name + '/' + object_name_prefix + start_mark
@@ -898,6 +940,12 @@ def main():
                       dest='list_objects',
                       help='List Bucket/Object under current user')
 
+  parser.add_argument('--list-trash',
+                      action='store_true',
+                      dest='list_trash',
+                      default=False,
+                      help='''If toggled, List trash under current user.''')
+
   parser.add_argument('-d', '--data',
                       nargs='?',
                       metavar='data file',
@@ -1032,11 +1080,17 @@ def main():
                       default=None,
                       help='String indicates gif extract type, unknown will disable bucket auto gif extract')
 
-  parser.add_argument('--restore-archived',
+  parser.add_argument('--archive',
                       action='store_true',
-                      dest='restore_archived',
+                      dest='is_archive',
                       default=False,
-                      help='''If toggled, restore archived object as standard.''')
+                      help='''If toggled, visit archived objects.''')
+
+  parser.add_argument('--restore-archive',
+                      action='store_true',
+                      dest='restore_archive',
+                      default=False,
+                      help='''If toggled, restore archived object.''')
 
   group = parser.add_argument_group('acl')
   group.add_argument('--gratee',
@@ -1050,6 +1104,11 @@ def main():
                      dest='permission',
                      choices=['READ', 'WRITE', 'READ_OBJECTS', 'FULL_CONTROL'],
                      help='Add acl to bucket')
+  group.add_argument('--public',
+                     action='store_true',
+                     dest='is_public',
+                     default=False,
+                     help='''If toggled, set bucket or object public.''')
 
   cp = parser.add_argument_group('cp')
   cp.add_argument('-srcb', '--src_bucket',
@@ -1133,13 +1192,15 @@ def main():
                        object_name_prefix=list_dir, start_mark=start_mark)
       else:
         list_buckets(fds_client=fds_client, prefix=list_dir, start_mark=start_mark)
+    elif list_trash:
+      list_bucket_trash(bucket_name=bucket_name)
     elif not (list_objects is None):
       if not (bucket_name is None):
         if object_name is not None:
           list_version_ids(bucket_name=bucket_name, object_name=object_name)
         else:
           list_object(bucket_name=bucket_name, object_name_prefix=list_objects,
-                      start_mark=start_mark)
+                      start_mark=start_mark, is_archive=is_archive)
       else:
         list_buckets(fds_client=fds_client, prefix=list_objects, start_mark=start_mark)
       pass
@@ -1153,15 +1214,20 @@ def main():
                           bucket_name=bucket_name,
                           object_name_prefix=object_name,
                           metadata=metadata)
+          elif is_public:
+            set_public(bucket_name=bucket_name, object_name=object_name, is_archive=is_archive)
           elif gratee and permission:
-            put_object_acl(bucket_name, object_name, gratee, permission)
-          elif restore_archived:
+            put_object_acl(bucket_name, object_name, gratee, permission, is_archive)
+          elif restore_archive:
             restore_archived_object(bucket_name, object_name)
           else:
             put_object(data_file=data_file,
                        bucket_name=bucket_name,
                        object_name=object_name,
-                       metadata=metadata)
+                       metadata=metadata,
+                       is_archive=is_archive)
+        elif is_public:
+          set_public(bucket_name=bucket_name)
         elif gratee and permission:
           put_bucket_acl(bucket_name, gratee, permission)
         elif lifecycle:
@@ -1191,7 +1257,8 @@ def main():
                      offset=offset,
                      length=length,
                      webp_quality=webp_quality,
-                     gif_extract_type=gif_extract_type)
+                     gif_extract_type=gif_extract_type,
+                     is_archive=is_archive)
         elif lifecycle:
           get_bucket_lifecycle_config(bucket_name)
         elif cors:
@@ -1207,11 +1274,12 @@ def main():
       elif method == 'delete':
         if object_name:
           if gratee and permission:
-            delete_object_acl(bucket_name, object_name, gratee, permission)
+            delete_object_acl(bucket_name, object_name, gratee, permission, is_archive)
           else:
             delete_object(bucket_name=bucket_name,
                           object_name=object_name,
-                          enable_trash=not disable_trash)
+                          enable_trash=not disable_trash,
+                          is_archive=is_archive)
         elif object_prefix is not None:
           delete_objects(bucket_name=bucket_name,
                          object_prefix=object_prefix,

@@ -24,7 +24,9 @@ class FDSObjectMetadata(object):
     Common.MULITPART_UPLOAD_MODE,
     Common.PREVIOUS_VERSION_ID,
     Common.SERVER_SIDE_ENCRYPTION,
-    Common.STORAGE_CLASS
+    Common.STORAGE_CLASS,
+    Common.RESTORE_EXPIRY_DATE,
+    Common.ONGOING_RESTORE
   ]
 
   def __init__(self):

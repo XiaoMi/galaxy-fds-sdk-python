@@ -3,16 +3,6 @@
 
 Galaxy FDS SDK Python封装了FDS的API，用户安装SDK后，可以非常容易地调用FDS提供的接口。
 
-## 开发者
-本项目采用Python官方推荐的以来管理工具`pipenv`来管理，`pipenv`作用类似于`maven`，主要依赖`Pipfile`和`Pipfile.lock`两个文件。
-
-开发者开发步骤：
-1. cd ${galaxy-fds-sdk-python}，到工程目录
-2. pipenv install，安装依赖
-3. pipenv install ${dependency}，例如:pipenv install flask安装依赖
-4. pipenv shell，进入激活当前工程以来的python环境
-5. pipenv --py，获取当前工程的python路径，此路径可以设置到vscode, pycharm等工具之中。
-
 ## 安装
 
 安装`pyhon-pip`后，执行`pip install galaxy-fds-sdk`即可。
@@ -21,18 +11,28 @@ Galaxy FDS SDK Python封装了FDS的API，用户安装SDK后，可以非常容�
 
 ## 使用
 
-使用前需要在小米开放平台注册得到应用的AccessKey和SecretKey。
+使用前，内网用户需要在小米融合云官网得到应用的AccessKey和SecretKey，外网生态链用户则需要联系小米生态云得到应用的AccessKey和SecretKey。
 
 ### 创建Bucket
 
 ```
-from fds import GalaxyFDSClient, GalaxyFDSClientException
-client = GalaxyFDSClient("ACCESS_KEY", "SECRET_KEY")
+from fds import GalaxyFDSClient, GalaxyFDSClientException, FDSClientConfiguration
+# FDSClientConfiguration 需要根据自己需要设置
+client = GalaxyFDSClient(
+    access_key="ACCESS_KEY",
+    access_secret="SECRET_KEY",
+    config=FDSClientConfiguration(
+        endpoint="xxxx-fds.api.xiaomi.net",
+        enable_cdn_for_upload=False,
+        enable_cdn_for_download=False,
+    ),
+)
+
 
 try:
   client.create_bucket("bucket_name")
 except GalaxyFDSClientException as e:
-  print e.message
+  print(e.message)
 ```
 
 ### 上传Object
@@ -69,38 +69,44 @@ except GalaxyFDSClientException as e:
 ## 命令行工具
 fds提供两种命令行工具：高层的`fdscli`和底层的`fds`。
 
-`fdscli`命令行提供与aws s3类似的交互方式，主要是`rb`, `mb`, `rm`, `ls`, `cp`, `mv`, `sync(暂未实现)` 七个子命令。用户可以通过`fdscli`命令获取所有子命令名称，同时可以通过`fdscli`+子命令名称的方式，获取每个子命令具体使用方式.
+`fdscli`命令行提供与aws s3类似的交互方式，主要是`access`, `config`, `info`, `presigned`, `set-public`, `show-ttl`, `rb`, `mb`, `rm`, `ls`, `cp`, `sync` 12个子命令。用户可以通过`fdscli`命令获取所有子命令名称，同时可以通过`fdscli`+子命令名称的方式，获取每个子命令具体使用方式.
 ```
->>> fdscli
-Type:        FDS
-String form: <fds.fds_cli.FDS object at 0x7fb25e4da860>
-Docstring:   Advanced fds cli you deserved
+Usage: fdscli [OPTIONS] COMMAND [ARGS]...
 
-Usage:       fdscli 
-             fdscli cp
-             fdscli ls
-             fdscli mb
-             fdscli mv
-             fdscli rb
-             fdscli rm
-             fdscli sync
+Options:
+  --ak TEXT            Access Key ID
+  --sk TEXT            Access Key Secret
+  --endpoint TEXT      FDS Endpoint
+  --cdn_download       Whether to download using cdn
+  --https              Whether to download using https
+  --timeout INTEGER    Client Timeout
+  --part_size INTEGER  Part size when multipart uploading
+  --help               Show this message and exit.
+
+Commands:
+  access      set the accessibility of resource
+  config      config ak, sk, endpoint and so on
+  cp          cp command do lots of things.
+  info        display the configurations
+  ls          list all buckets or objects in a bucket
+  mb          create(make) a bucket
+  presigned   presigned command generates presigned url for download project
+  rb          delete(remove) a bucket
+  rm          delete(remove) a object
+  set-public  set the resource of fds public or not
+  show-ttl    ttl command shows the lifecycle information of a bucket or a...
+  sync        sync command syncs between (local directory and fds) (fds and...
 ```
 
 ```
->>> fdscli rb
-Fire trace:
-1. Initial component
-2. Instantiated class "FDS" (/home/hujianxin/.local/share/virtualenvs/galaxy-fds-sdk-python-uDV3PPMF/lib/python3.5/site-packages/fds/fdscli_cli.py:36)
-3. Accessed property "rb" (/home/hujianxin/.local/share/virtualenvs/galaxy-fds-sdk-python-uDV3PPMF/lib/python3.5/site-packages/fds/fdscli_cli.py:96)
-4. ('The function received no value for the required argument:', 'bucket_uri')
+>>> fdscli rb --help                       
+Usage: fdscli rb [OPTIONS] FDS_URL
 
-Type:        method
-String form: <bound method FDS.rb of <fds.fdscli_cli.FDS object at 0x7fb7efe48940>>
-File:        /home/hujianxin/.local/share/virtualenvs/galaxy-fds-sdk-python-uDV3PPMF/lib/python3.5/site-packages/fds/fdscli_cli.py
-Line:        96
+  delete(remove) a bucket
 
-Usage:       fdscli rb BUCKET_URI [FORCE]
-             fdscli rb --bucket-uri BUCKET_URI [--force FORCE]
+Options:
+  -f, --force  Delete bucket although it is nonempty
+  --help       Show this message and exit.
 ```
 
 **IMPORTANT**: 在`fdscli`命令中，通过`fds://`开头表示FDS远程资源，例如`fds://bucket_name/home/a.txt`则表示，bucket name为`bucket_name`， object name是`home/a.txt`的资源。
@@ -121,6 +127,16 @@ FDS服务端可以响应带签名认证的HTTP请求，我们使用了[requests]
 ## API
 
 通过阅读FDS的API文档，我们实现了上传下载Object等接口。HTTP请求参数、Header等信息参见FDS官方文档。
+
+## 开发者
+本项目采用Python官方推荐的以来管理工具`poetry`来管理，`poetry`作用类似于`maven`，主要依赖`myproject.toml`这个管理文件。
+
+开发者开发步骤：
+1. cd ${galaxy-fds-sdk-python}，到工程目录
+2. poetry install，安装依赖
+3. poetry add ${dependency}，例如:pipenv install flask安装依赖
+4. poetry shell，进入激活当前工程以来的python环境
+5. poetry publish --build 发布到pypi
 
 ### 参考资料
 
