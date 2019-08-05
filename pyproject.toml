@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "galaxy-fds-sdk"
+version = "1.4.28"
+description = "Python sdk for Galaxy FDS"
+authors = ["hujianxin <hujianxin@xiaomi.com>"]
+packages = [
+    { include = "fds" },
+]
+
+[tool.poetry.dependencies]
+python = "~2.7 || ^3.4"
+requests = "^2.21"
+argcomplete = "^1.9"
+click = "^7.0"
+enum34 = { version = "*", python = "~3.4" }
+pathlib2 = { version = "^2.2", python = "~2.7", allows-prereleases = true }
+futures = { version = "*", python = "~2.7", allows-prereleases = true }
+
+[tool.poetry.dev-dependencies]
+rope = "^0.14.0"
+pep8 = "^1.7"
+autopep8 = "^1.4"
+black = {version = "^18.3-alpha.0",allows-prereleases = true}
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.poetry.scripts]
+fds = 'fds.fds_cli:main'
+fdscli = 'fds.fdscli_cli:main'
