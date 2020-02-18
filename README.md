@@ -7,7 +7,7 @@ Galaxy FDS SDK Python封装了FDS的API，用户安装SDK后，可以非常容�
 
 安装`pyhon-pip`后，执行`pip install galaxy-fds-sdk`即可。
 
-也可以在requirements.txt中写上`galaxy-fds-sdk>=1.2.10`。
+也可以在requirements.txt中写上`galaxy-fds-sdk>=1.4.31`。
 
 ## 使用
 
